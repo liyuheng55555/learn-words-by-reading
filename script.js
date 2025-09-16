@@ -247,7 +247,7 @@ const aiProgressEl = document.getElementById('ai-progress');
 const progressFillEl = document.getElementById('progress-fill');
 const progressTextEl = document.getElementById('progress-text');
 const scoreSummaryEl = document.getElementById('score-summary');
-const aiIdentityEl = document.getElementById('ai-identity');
+const aiIdentityCheckBtn = document.getElementById('ai-identity-check');
 
 // AI Grading Event Listeners
 document.getElementById('ai-grade').addEventListener('click', async () => {
@@ -260,13 +260,34 @@ document.getElementById('ai-grade').addEventListener('click', async () => {
     if (savedApiUrl) document.getElementById('api-url').value = savedApiUrl;
     if (savedApiKey) document.getElementById('api-key').value = savedApiKey;
     document.getElementById('ai-model').value = savedModel;
-
-    // Check AI identity when opening config
-    if (savedApiUrl && savedApiKey) {
-      await checkAIIdentity(savedApiUrl, savedApiKey, savedModel);
-    }
   } else {
     aiConfigEl.style.display = 'none';
+  }
+});
+
+// AI Identity Check Button
+aiIdentityCheckBtn.addEventListener('click', async () => {
+  const savedApiUrl = localStorage.getItem('ai-api-url');
+  const savedApiKey = localStorage.getItem('ai-api-key');
+  const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
+
+  if (!savedApiUrl || !savedApiKey) {
+    alert('请先配置API地址和Key！\n\n点击"🤖 AI判题"按钮进行配置。');
+    return;
+  }
+
+  aiIdentityCheckBtn.textContent = '🔍 检测中...';
+  aiIdentityCheckBtn.disabled = true;
+
+  try {
+    const identity = await checkAIIdentityForDisplay(savedApiUrl, savedApiKey, savedModel);
+    // Show result in alert
+    alert(`AI身份信息：\n\n${identity}`);
+  } catch (error) {
+    alert(`AI身份检测失败：\n\n${error.message}`);
+  } finally {
+    aiIdentityCheckBtn.textContent = '🔍 检测AI身份';
+    aiIdentityCheckBtn.disabled = false;
   }
 });
 
@@ -290,15 +311,20 @@ document.getElementById('start-grade').addEventListener('click', async () => {
   localStorage.setItem('ai-api-key', apiKey);
   localStorage.setItem('ai-model', model);
 
-  // Check AI identity first
-  await checkAIIdentity(apiUrl, apiKey, model);
-
   await startAIGrading(apiUrl, apiKey, model);
 });
 
 // Main AI grading function
 async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
-  if (gradingInProgress) return;
+  console.log('[Main Grading] 开始AI判题流程');
+  console.log('[Main Grading] API URL:', apiUrl);
+  console.log('[Main Grading] 模型:', model);
+  console.log('[Main Grading] API Key 长度:', apiKey ? apiKey.length : 0);
+
+  if (gradingInProgress) {
+    console.warn('[Main Grading] 判题已在进行中，跳过');
+    return;
+  }
 
   gradingInProgress = true;
   aiProgressEl.style.display = 'block';
@@ -309,9 +335,14 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
 
   try {
     const data = gather();
+    console.log('[Main Grading] 收集的数据:', data);
+
     const filledTerms = VOCABS.filter(term => data[term] && data[term].trim());
+    console.log('[Main Grading] 已填写的词汇:', filledTerms);
+    console.log('[Main Grading] 已填写词汇数量:', filledTerms.length);
 
     if (filledTerms.length === 0) {
+      console.warn('[Main Grading] 没有填写的词汇');
       toast('请先填写一些答案', 'warn');
       gradingInProgress = false;
       aiProgressEl.style.display = 'none';
@@ -326,45 +357,69 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     for (let i = 0; i < filledTerms.length; i += batchSize) {
       batches.push(filledTerms.slice(i, i + batchSize));
     }
+    console.log('[Main Grading] 分批处理:', batches.length, '个批次');
 
     let totalProcessed = 0;
     const results = {};
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
+      console.log(`[Main Grading] 处理第${i+1}批:`, batch);
       progressTextEl.textContent = `正在处理第${i+1}/${batches.length}批 (${batch.length}个词)...`;
 
       try {
         const batchResults = await gradeBatch(batch, data, apiUrl, apiKey, model);
+        console.log(`[Main Grading] 第${i+1}批结果:`, batchResults);
         Object.assign(results, batchResults);
         totalProcessed += batch.length;
 
         const progress = (totalProcessed / filledTerms.length) * 100;
         progressFillEl.style.width = progress + '%';
+        console.log(`[Main Grading] 进度: ${progress}% (${totalProcessed}/${filledTerms.length})`);
 
         // Small delay between batches to avoid rate limiting
         if (i < batches.length - 1) {
+          console.log(`[Main Grading] 等待1秒避免频率限制`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error) {
+        console.error(`[Main Grading] 第${i+1}批处理失败:`, error);
         toast(`第${i+1}批处理失败: ${error.message}`, 'warn');
       }
     }
 
+    console.log('[Main Grading] 所有批次处理完成，最终结果:', results);
     // Display results
     displayGradingResults(results, filledTerms.length);
 
   } catch (error) {
+    console.error('[Main Grading] 判题过程错误:', error);
     toast('判题过程中出现错误: ' + error.message, 'warn');
   } finally {
     gradingInProgress = false;
     aiProgressEl.style.display = 'none';
+    console.log('[Main Grading] 判题流程结束');
   }
 }
 
 // Grade a batch of words
 async function gradeBatch(terms, data, apiUrl, apiKey, model = 'gpt-3.5-turbo') {
+  console.log(`[Batch Grading] 开始处理批次:`, terms);
+  console.log(`[Batch Grading] 使用模型:`, model);
+
   const prompt = createGradingPrompt(terms, data);
+  console.log(`[Batch Grading] 生成的提示词:`, prompt);
+
+  const requestBody = {
+    model: model,
+    messages: [{
+      role: 'user',
+      content: prompt
+    }],
+    temperature: 0.1
+  };
+
+  console.log(`[Batch Grading] 请求体:`, JSON.stringify(requestBody, null, 2));
 
   const response = await fetch(apiUrl, {
     method: 'POST',
@@ -372,24 +427,32 @@ async function gradeBatch(terms, data, apiUrl, apiKey, model = 'gpt-3.5-turbo') 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model: model,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      temperature: 0.1
-    })
+    body: JSON.stringify(requestBody)
   });
 
+  console.log(`[Batch Grading] 响应状态:`, response.status, response.statusText);
+
   if (!response.ok) {
-    throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+    const errorText = await response.text();
+    console.error(`[Batch Grading] API错误响应:`, errorText);
+    throw new Error(`API请求失败: ${response.status} ${response.statusText}: ${errorText}`);
   }
 
   const result = await response.json();
-  const aiResponse = result.choices[0].message.content;
+  console.log(`[Batch Grading] API响应:`, result);
 
-  return parseGradingResponse(aiResponse, terms);
+  if (!result.choices || !result.choices[0] || !result.choices[0].message) {
+    console.error(`[Batch Grading] 响应格式异常:`, result);
+    throw new Error('API响应格式异常');
+  }
+
+  const aiResponse = result.choices[0].message.content;
+  console.log(`[Batch Grading] AI回复内容:`, aiResponse);
+
+  const parsedResults = parseGradingResponse(aiResponse, terms);
+  console.log(`[Batch Grading] 解析结果:`, parsedResults);
+
+  return parsedResults;
 }
 
 // Create grading prompt for AI
@@ -419,33 +482,51 @@ ${termsList}
 
 // Parse AI grading response
 function parseGradingResponse(aiResponse, terms) {
+  console.log(`[Parse Response] 开始解析AI回复:`, aiResponse);
+  console.log(`[Parse Response] 需要解析的词汇:`, terms);
+
   try {
     // Extract JSON from response
     const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    console.log(`[Parse Response] JSON匹配结果:`, jsonMatch ? jsonMatch[0] : 'null');
+
     if (!jsonMatch) {
+      console.warn(`[Parse Response] 未找到JSON格式，使用fallback解析`);
       throw new Error('无法解析AI回复格式');
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
+    console.log(`[Parse Response] JSON解析成功:`, parsed);
+
     const results = {};
 
     terms.forEach(term => {
+      console.log(`[Parse Response] 处理词汇: ${term}`);
+
       if (parsed[term]) {
         const termData = parsed[term];
+        console.log(`[Parse Response] ${term} 的数据:`, termData);
+
         if (typeof termData === 'object') {
           // New format with correct answer
+          const isCorrect = termData['判断'] === '正确';
+          const correctAnswer = termData['正确答案'];
           results[term] = {
-            isCorrect: termData['判断'] === '正确',
-            correctAnswer: termData['正确答案']
+            isCorrect: isCorrect,
+            correctAnswer: correctAnswer
           };
+          console.log(`[Parse Response] ${term} 新格式解析 - 正确性: ${isCorrect}, 答案: ${correctAnswer}`);
         } else {
           // Old format - just boolean
+          const isCorrect = termData === '正确';
           results[term] = {
-            isCorrect: termData === '正确',
+            isCorrect: isCorrect,
             correctAnswer: null
           };
+          console.log(`[Parse Response] ${term} 旧格式解析 - 正确性: ${isCorrect}`);
         }
       } else {
+        console.log(`[Parse Response] ${term} 未在解析结果中找到，使用fallback`);
         // Fallback: check if the response contains the term and result
         const termResult = aiResponse.toLowerCase().includes(term.toLowerCase()) &&
                           aiResponse.toLowerCase().includes('正确');
@@ -453,11 +534,17 @@ function parseGradingResponse(aiResponse, terms) {
           isCorrect: termResult,
           correctAnswer: null
         };
+        console.log(`[Parse Response] ${term} fallback解析 - 正确性: ${termResult}`);
       }
     });
 
+    console.log(`[Parse Response] 最终解析结果:`, results);
     return results;
+
   } catch (error) {
+    console.error(`[Parse Response] JSON解析失败:`, error);
+    console.log(`[Parse Response] 使用fallback解析方法`);
+
     // Fallback parsing if JSON parsing fails
     const results = {};
     terms.forEach(term => {
@@ -468,7 +555,10 @@ function parseGradingResponse(aiResponse, terms) {
         isCorrect: isCorrect,
         correctAnswer: null
       };
+      console.log(`[Parse Response] ${term} fallback结果 - 正确性: ${isCorrect}`);
     });
+
+    console.log(`[Parse Response] Fallback最终结果:`, results);
     return results;
   }
 }
@@ -539,60 +629,54 @@ function clearGradingResults() {
   });
 }
 
-// Check AI Identity
-async function checkAIIdentity(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
-  try {
-    aiIdentityEl.textContent = '检测AI身份...';
+// Check AI Identity for Display (returns result instead of updating UI)
+async function checkAIIdentityForDisplay(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
+  console.log('[AI Identity] 开始检测AI身份');
+  console.log('[AI Identity] API URL:', apiUrl);
+  console.log('[AI Identity] 模型:', model);
+  console.log('[AI Identity] API Key 长度:', apiKey ? apiKey.length : 0);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{
-          role: 'user',
-          content: '你好，请简单介绍一下你自己，包括你的名称和主要功能。回答请控制在30字以内。'
-        }],
-        temperature: 0.1,
-        max_tokens: 100
-      })
-    });
+  const requestBody = {
+    model: model,
+    messages: [{
+      role: 'user',
+      content: '你好，请详细介绍一下你自己，包括你的名称、版本、主要功能和特色。'
+    }],
+    temperature: 0.1,
+    max_tokens: 200
+  };
 
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`);
-    }
+  console.log('[AI Identity] 请求体:', JSON.stringify(requestBody, null, 2));
 
-    const result = await response.json();
-    const aiResponse = result.choices[0].message.content.trim();
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(requestBody)
+  });
 
-    // Extract key info from response
-    let identity = aiResponse;
-    if (identity.length > 50) {
-      identity = identity.substring(0, 47) + '...';
-    }
+  console.log('[AI Identity] 响应状态:', response.status, response.statusText);
 
-    aiIdentityEl.textContent = identity;
-    aiIdentityEl.style.color = 'var(--ok)';
-
-  } catch (error) {
-    aiIdentityEl.textContent = `连接失败: ${error.message}`;
-    aiIdentityEl.style.color = 'var(--warn)';
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[AI Identity] API错误响应:', errorText);
+    throw new Error(`${response.status} ${response.statusText}: ${errorText}`);
   }
+
+  const result = await response.json();
+  console.log('[AI Identity] API响应:', result);
+
+  if (!result.choices || !result.choices[0] || !result.choices[0].message) {
+    console.error('[AI Identity] 响应格式异常:', result);
+    throw new Error('API响应格式异常');
+  }
+
+  const aiResponse = result.choices[0].message.content.trim();
+  console.log('[AI Identity] AI回复:', aiResponse);
+
+  return aiResponse;
 }
 
-// Initialize AI identity check
-window.addEventListener('load', async () => {
-  const savedApiUrl = localStorage.getItem('ai-api-url');
-  const savedApiKey = localStorage.getItem('ai-api-key');
-  const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
-
-  if (savedApiUrl && savedApiKey) {
-    await checkAIIdentity(savedApiUrl, savedApiKey, savedModel);
-  } else {
-    aiIdentityEl.textContent = '未配置AI';
-    aiIdentityEl.style.color = 'var(--muted)';
-  }
-});
+// No auto-initialization needed for AI identity check
