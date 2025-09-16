@@ -256,3 +256,132 @@ button:hover, .btn:hover {
 .warn {
   color: var(--warn);
 }
+
+/* AI Grading Styles */
+.ai-btn {
+  background: linear-gradient(45deg, var(--accent), var(--accent-2)) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.ai-btn:hover {
+  opacity: 0.9;
+}
+
+.ai-config {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgba(38,139,210,.3);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.ai-config h4 {
+  margin: 0 0 12px 0;
+  color: var(--accent);
+}
+
+.ai-input-group {
+  margin: 12px 0;
+}
+
+.ai-input-group label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ai-input-group input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(38,139,210,.3);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.ai-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ai-progress {
+  margin-top: 16px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(88,110,117,.3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-text {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.ai-results {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgba(38,139,210,.3);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.ai-results h4 {
+  margin: 0 0 12px 0;
+  color: var(--accent);
+}
+
+.score-summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.item.correct {
+  border-color: var(--ok);
+  background: rgba(133,153,0,.1);
+}
+
+.item.incorrect {
+  border-color: var(--warn);
+  background: rgba(220,50,47,.1);
+}
+
+.item .grade-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.item .grade-indicator.correct {
+  background: var(--ok);
+  color: white;
+}
+
+.item .grade-indicator.incorrect {
+  background: var(--warn);
+  color: white;
+}

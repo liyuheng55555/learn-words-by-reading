@@ -43,6 +43,34 @@
           <button id="load">从本地恢复</button>
           <button id="clear">清空答案</button>
           <button id="export">导出CSV</button>
+          <button id="ai-grade" class="ai-btn">🤖 AI判题</button>
+        </div>
+
+        <div class="ai-config" id="ai-config" style="display: none;">
+          <h4>AI判题设置</h4>
+          <div class="ai-input-group">
+            <label>API地址：</label>
+            <input type="text" id="api-url" placeholder="https://api.openai.com/v1/chat/completions" />
+          </div>
+          <div class="ai-input-group">
+            <label>API Key：</label>
+            <input type="password" id="api-key" placeholder="sk-..." />
+          </div>
+          <div class="ai-controls">
+            <button id="start-grade">开始判题</button>
+            <button id="cancel-grade">取消</button>
+          </div>
+          <div class="ai-progress" id="ai-progress" style="display: none;">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-text" id="progress-text">处理中...</div>
+          </div>
+        </div>
+
+        <div class="ai-results" id="ai-results" style="display: none;">
+          <h4>判题结果</h4>
+          <div class="score-summary" id="score-summary"></div>
         </div>
         <div class="list" id="list"></div>
         <div class="footer-note">提示：输入会自动保存到 <code>localStorage</code>（点击“保存到本地”立即持久化）。导出文件含表头：<em>English,Chinese</em>。</div>
