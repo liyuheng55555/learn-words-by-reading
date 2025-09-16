@@ -80,6 +80,32 @@ function buildList(){
 // Initialize
 buildList();
 
+// Theme toggle functionality
+const themeToggle = document.getElementById('theme-toggle');
+const html = document.documentElement;
+
+// Load saved theme or default to dark
+const savedTheme = localStorage.getItem('theme') || 'dark';
+if (savedTheme === 'light') {
+  html.classList.add('light');
+  themeToggle.textContent = '☀️ 浅色';
+} else {
+  themeToggle.textContent = '🌙 深色';
+}
+
+themeToggle.addEventListener('click', () => {
+  const isLight = html.classList.contains('light');
+  if (isLight) {
+    html.classList.remove('light');
+    themeToggle.textContent = '🌙 深色';
+    localStorage.setItem('theme', 'dark');
+  } else {
+    html.classList.add('light');
+    themeToggle.textContent = '☀️ 浅色';
+    localStorage.setItem('theme', 'light');
+  }
+});
+
 // Delegated jump - both term and jump button work
 listEl.addEventListener('click', (e)=>{
   const t = e.target;
