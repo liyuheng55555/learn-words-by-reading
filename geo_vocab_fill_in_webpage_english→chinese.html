@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Geoscience Vocab – EN→ZH Fill‑in + Article</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #131a2e;
+      --muted: #9fb3c8;
+      --text: #e8eef7;
+      --accent: #7aa2f7;
+      --accent-2: #89dceb;
+      --ok: #9ece6a;
+      --warn: #f7768e;
+      --shadow: rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 1200px at 15% 10%, #0d1530 0%, var(--bg) 42%, #0a0f1d 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: linear-gradient(180deg, rgba(11,16,32,.9) 0%, rgba(11,16,32,.6) 100%);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid rgba(138,173,244,.15);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+    h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .3px; }
+    .hint { color: var(--muted); font-size: 13px; }
+    main { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; max-width: 1200px; margin: 16px auto; padding: 0 20px 40px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+    .card { background: var(--card); border: 1px solid rgba(122,162,247,.16); border-radius: 14px; box-shadow: 0 10px 30px var(--shadow); }
+    .article { padding: 22px 22px 8px; }
+    .article h2 { margin-top: 0; margin-bottom: 8px; font-size: 22px; }
+    .article p { text-align: justify; }
+    .article strong { color: var(--accent-2); }
+
+    .side { position: sticky; top: 72px; align-self: start; max-height: calc(100vh - 90px); overflow: auto; }
+    .side-inner { padding: 14px; }
+    .side h3 { margin: 4px 0 8px; font-size: 16px; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 12px; }
+    button, .btn { appearance: none; border: 1px solid rgba(122,162,247,.35); background: #0f1630; color: var(--text); padding: 8px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+    button:hover, .btn:hover { border-color: var(--accent); }
+
+    .search { width: 100%; margin: 8px 0 6px; }
+    .search input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(122,162,247,.25); background: #0c1328; color: var(--text); }
+
+    .list { display: grid; gap: 8px; }
+    .item { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border: 1px solid rgba(122,162,247,.16); border-radius: 12px; background: #0e152b; }
+    .term { font-weight: 700; color: var(--accent); font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .jump { margin-left: auto; font-weight: 600; font-size: 12px; color: var(--muted); text-decoration: underline; cursor: pointer; }
+    .item input { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(122,162,247,.25); background: #0b1329; color: var(--text); }
+
+    .footer-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>地学英语词汇填空（EN → 中文） &nbsp;·&nbsp; Geoscience Vocab Fill‑in</h1>
+      <div class="hint">说明：左侧为英文文章（词汇已高亮）。右侧为每个词的中文释义填空。点击“导出CSV”即可生成 “英文,中文填空” 文件。（本页离线运行，数据仅保存在浏览器）</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ARTICLE -->
+    <section class="card article" id="article">
+      <h2>Article</h2>
+      <p>In the thin <strong id="t-atmosphere">atmosphere</strong> that halos our planet, the oceans of the <strong id="t-hydrosphere">hydrosphere</strong> converse constantly with the rocks of the <strong id="t-lithosphere">lithosphere</strong>. Water vapor rises, condenses, and falls, while winds redistribute heat and trace gases like <strong id="t-oxygen">oxygen</strong>, <strong id="t-hydrogen">hydrogen</strong>, and <strong id="t-carbon-dioxide">carbon dioxide</strong>—each a small player with an outsized role in climate and life.</p>
+      <p>Beneath our feet, Earth is layered: a molten <strong id="t-core">core</strong>, a convecting <strong id="t-mantle">mantle</strong>, and a brittle <strong id="t-crust">crust</strong>. Where plates grind and pull apart, mountains grow and a <strong id="t-volcano">volcano</strong> may <strong id="t-erupt">erupt</strong>, expelling <strong id="t-magma">magma</strong> that cools into new stone. In those rocks we find history written in <strong id="t-mineral">mineral</strong> grains—veins of metal <strong id="t-ore">ore</strong>, sparkling <strong id="t-quartz">quartz</strong>, mottled <strong id="t-granite">granite</strong>, and polished <strong id="t-marble">marble</strong>. Even a humble <strong id="t-pebble">pebble</strong> is a record of pressure, time, and motion.</p>
+      <p>Navigators plot position by <strong id="t-longitude">longitude</strong> and <strong id="t-latitude">latitude</strong>, aviators watch the <strong id="t-horizon">horizon</strong> and adjust for <strong id="t-altitude">altitude</strong>, and scientists track storms as they traverse basins driven by seasonal winds. A warm <strong id="t-breeze">breeze</strong> can swell into a sudden <strong id="t-gust">gust</strong>; monsoon patterns bring the rhythmic <strong id="t-monsoon">monsoon</strong> rains. Over open water, a stiff <strong id="t-gale">gale</strong> may seed a spiraling <strong id="t-hurricane">hurricane</strong>, a land-bound <strong id="t-tornado">tornado</strong>, or a Pacific <strong id="t-typhoon">typhoon</strong>, each capable of <strong id="t-destructive">destructive</strong> power that can <strong id="t-endanger">endanger</strong> communities and <strong id="t-jeopardize">jeopardize</strong> fragile infrastructure.</p>
+      <p>Climate itself pulses with oscillations. During <strong id="t-el-nino">El Nino</strong>, the tropical Pacific reorganizes, warming surface waters and perturbing rainfall far from the equator. Such a climate <strong id="t-phenomenon">phenomenon</strong> amplifies extremes—deluges here, <strong id="t-drought">drought</strong> there—and can intensify <strong id="t-flooding">flooding</strong> when saturated soils can’t drink another drop, turning rivers into a brown <strong id="t-torrent">torrent</strong> and slopes into liquid earth.</p>
+      <p>Human hands leave signatures, too. In polluted cities, brown <strong id="t-smog">smog</strong> blurs the skyline; factory stacks <strong id="t-fume">fume</strong> while dawn <strong id="t-mist">mist</strong> struggles to lift. Excess <strong id="t-greenhouse">greenhouse</strong> gases such as <strong>carbon dioxide</strong> trap heat, altering <strong id="t-thermodynamic">thermodynamic</strong> gradients that steer winds and storms. On longer timescales, rock and water quietly exchange atoms: iron reddens to an iron <strong id="t-oxide">oxide</strong>, while hydrogen and oxygen cycle through rain, river, and reef as <strong>hydrogen</strong> and <strong>oxygen</strong> recombine in endless chemical choreography.</p>
+      <p>In the quiet of a field, a compass needle—a simple <strong id="t-magnet">magnet</strong>—aligns to Earth’s invisible lines, hinting at deep currents of molten iron moving far below. Those same deep processes deliver <strong>ore</strong> that fuels industry and rare <strong>mineral</strong> assemblages prized by collectors, while metamorphic heat recrystallizes <strong>marble</strong> from limestone and threads clear <strong>quartz</strong> through fractures in weathered <strong>granite</strong>.</p>
+      <p>Yet nature’s beauty is braided with risk. A minor <strong id="t-mishap">mishap</strong> on a storm-dark road can cascade when culverts clog and cul-de-sacs fill with runoff. On a remote coast, a distant seafloor slide can lift a wall of water into a <strong id="t-tsunami">tsunami</strong>. What begins as a localized <strong id="t-disaster">disaster</strong> can, through unlucky alignment, become <strong id="t-catastrophic">catastrophic</strong>—a regional <strong id="t-calamity">calamity</strong> that tests our designs and our resolve.</p>
+      <p>To live well on this animated world is to read its signals: the smell of <strong>fume</strong> on a still morning, the sudden chill of a sea <strong>breeze</strong>, the stacked anvils on the <strong>horizon</strong> before a <strong>gale</strong>. It is to build with stone that remembers—<strong>granite</strong> blocks, <strong>marble</strong> veneers, <strong>quartz</strong> glass—and with systems that respect plate boundaries where <strong>volcano</strong>es may <strong>erupt</strong> and deltas where <strong>flooding</strong> will return. It is also to mind the chemistry we exhale and emit, balancing <strong>greenhouse</strong> budgets so the great engines that knit <strong>atmosphere</strong>, <strong>hydrosphere</strong>, and <strong>lithosphere</strong> keep humming along without tipping us toward the next <strong>catastrophic</strong> chapter.</p>
+    </section>
+
+    <!-- QUIZ SIDE -->
+    <aside class="card side" id="panel">
+      <div class="side-inner">
+        <h3>填空区 · Vocabulary Answers (中文)</h3>
+        <div class="search"><input id="filter" placeholder="筛选词汇…（支持模糊搜索）" /></div>
+        <div class="controls">
+          <button id="save">保存到本地</button>
+          <button id="load">从本地恢复</button>
+          <button id="clear">清空答案</button>
+          <button id="export">导出CSV</button>
+        </div>
+        <div class="list" id="list"></div>
+        <div class="footer-note">提示：输入会自动保存到 <code>localStorage</code>（点击“保存到本地”立即持久化）。导出文件含表头：<em>English,Chinese</em>。</div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // --- Vocabulary source list (unique, in requested order) ---
+    const VOCABS = [
+      "atmosphere","hydrosphere","lithosphere","oxygen","oxide","carbon dioxide","hydrogen","core","crust","mantle","longitude","latitude","horizon","altitude","disaster","mishap","catastrophic","calamity","endanger","jeopardise/jeopardize","destructive","El Nino","greenhouse","phenomenon","pebble","magnet","ore","mineral","marble","quartz","granite","gust","breeze","monsoon","gale","hurricane","tornado","typhoon","volcano","erupt","magma","thermodynamic","smog","fume","mist","tsunami","drought","flooding","torrent"
+    ];
+
+    const listEl = document.getElementById('list');
+    const filterEl = document.getElementById('filter');
+
+    // Build items
+    function makeId(term){
+      return 'term-' + term.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+    }
+    function jumpTo(term){
+      // Try by dedicated anchor id first
+      const byId = document.getElementById('t-' + term.toLowerCase().replace(/[^a-z0-9]+/g,'-'));
+      if (byId) { byId.scrollIntoView({behavior:'smooth', block:'center'}); highlight(byId); return; }
+      // Fallback: search first <strong> whose text includes the term case-insensitively
+      const strongs = document.querySelectorAll('#article strong');
+      const termLower = term.toLowerCase();
+      for (const s of strongs){
+        if (s.textContent.toLowerCase().includes(termLower)) { s.scrollIntoView({behavior:'smooth', block:'center'}); highlight(s); return; }
+      }
+      alert('在文章中未找到该词：' + term);
+    }
+    function highlight(el){
+      el.style.outline = '2px solid var(--accent-2)';
+      el.style.boxShadow = '0 0 0 4px rgba(137,220,235,.25)';
+      setTimeout(()=>{ el.style.outline = ''; el.style.boxShadow=''; }, 1500);
+    }
+
+    function buildList(){
+      listEl.innerHTML = '';
+      const q = filterEl.value?.trim().toLowerCase();
+      for (const term of VOCABS){
+        if (q && !term.toLowerCase().includes(q)) continue;
+        const id = makeId(term);
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="term">
+            <span>${term}</span>
+            <span class="jump" data-term="${term}">跳到文中</span>
+          </div>
+          <input aria-label="${term} 中文意思" placeholder="中文意思…" id="${id}" />
+        `;
+        listEl.appendChild(div);
+      }
+    }
+
+    buildList();
+
+    // Delegated jump
+    listEl.addEventListener('click', (e)=>{
+      const t = e.target;
+      if (t.classList.contains('jump')){
+        jumpTo(t.dataset.term);
+      }
+    });
+
+    filterEl.addEventListener('input', buildList);
+
+    // Persistence helpers
+    const KEY = 'geo_vocab_answers_v1';
+    function gather(){
+      const data = {};
+      for (const term of VOCABS){
+        const el = document.getElementById(makeId(term));
+        data[term] = el ? (el.value || '') : '';
+      }
+      return data;
+    }
+    function fill(data){
+      if (!data) return;
+      for (const term of VOCABS){
+        const el = document.getElementById(makeId(term));
+        if (el && term in data) el.value = data[term] || '';
+      }
+    }
+
+    // Auto-load if present
+    try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); fill(saved); } catch {}
+
+    // Buttons
+    document.getElementById('save').addEventListener('click', ()=>{
+      const data = gather();
+      localStorage.setItem(KEY, JSON.stringify(data));
+      toast('已保存到本地 ✓', 'ok');
+    });
+    document.getElementById('load').addEventListener('click', ()=>{
+      try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); fill(saved); toast('已从本地恢复 ✓', 'ok'); } catch { toast('未找到本地数据', 'warn'); }
+    });
+    document.getElementById('clear').addEventListener('click', ()=>{
+      for (const term of VOCABS){
+        const el = document.getElementById(makeId(term));
+        if (el) el.value = '';
+      }
+      toast('已清空输入', 'warn');
+    });
+
+    document.getElementById('export').addEventListener('click', ()=>{
+      const data = gather();
+      // Create CSV with header
+      const rows = [["English","Chinese"]];
+      for (const term of VOCABS){ rows.push([term, (data[term] || '').replaceAll('\n',' ').trim()]); }
+      const csv = toCSV(rows);
+      // BOM for Excel UTF-8
+      const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'english-chinese-fill.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast('CSV 已生成并开始下载', 'ok');
+    });
+
+    function toCSV(rows){
+      return rows.map(r => r.map(cell => csvCell(cell)).join(',')).join('\n');
+    }
+    function csvCell(v){
+      if (v == null) return '';
+      const s = String(v);
+      if (/[",\n]/.test(s)) return '"' + s.replaceAll('"','""') + '"';
+      return s;
+    }
+
+    // Tiny toast
+    function toast(msg, kind){
+      const t = document.createElement('div');
+      t.textContent = msg; t.style.position='fixed'; t.style.right='18px'; t.style.bottom='18px';
+      t.style.background = 'rgba(10,15,30,.95)'; t.style.border='1px solid rgba(122,162,247,.3)';
+      t.style.color = kind==='ok' ? 'var(--ok)' : (kind==='warn'? 'var(--warn)' : 'var(--text)');
+      t.style.padding = '10px 12px'; t.style.borderRadius='10px'; t.style.boxShadow='0 6px 18px var(--shadow)';
+      document.body.appendChild(t); setTimeout(()=>t.remove(), 2200);
+    }
+  </script>
+</body>
+</html>
