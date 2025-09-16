@@ -41,7 +41,8 @@
     .article { padding: 22px 22px 8px; }
     .article h2 { margin-top: 0; margin-bottom: 8px; font-size: 22px; }
     .article p { text-align: justify; }
-    .article strong { color: var(--accent-2); }
+    .article strong { color: var(--accent-2); cursor: pointer; transition: all 0.2s ease; }
+    .article strong:hover { color: var(--accent); background: rgba(122,162,247,.1); padding: 2px 4px; border-radius: 4px; }
 
     .side { position: sticky; top: 72px; align-self: start; max-height: calc(100vh - 90px); overflow: auto; }
     .side-inner { padding: 14px; }
@@ -54,10 +55,14 @@
     .search input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(122,162,247,.25); background: #0c1328; color: var(--text); }
 
     .list { display: grid; gap: 8px; }
-    .item { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border: 1px solid rgba(122,162,247,.16); border-radius: 12px; background: #0e152b; }
-    .term { font-weight: 700; color: var(--accent); font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .item { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border: 1px solid rgba(122,162,247,.16); border-radius: 12px; background: #0e152b; transition: all 0.2s ease; }
+    .item:hover { border-color: var(--accent); box-shadow: 0 4px 12px rgba(122,162,247,.1); }
+    .term { font-weight: 700; color: var(--accent); font-size: 14px; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+    .term:hover { color: var(--accent-2); }
     .jump { margin-left: auto; font-weight: 600; font-size: 12px; color: var(--muted); text-decoration: underline; cursor: pointer; }
-    .item input { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(122,162,247,.25); background: #0b1329; color: var(--text); }
+    .jump:hover { color: var(--accent-2); }
+    .item input { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(122,162,247,.25); background: #0b1329; color: var(--text); transition: border-color 0.2s ease; }
+    .item input:focus { border-color: var(--accent); outline: none; }
 
     .footer-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .ok { color: var(--ok); }
@@ -134,6 +139,34 @@
       setTimeout(()=>{ el.style.outline = ''; el.style.boxShadow=''; }, 1500);
     }
 
+    // Function to find term by id fragment
+    function findTermByIdFragment(idFragment){
+      for (const term of VOCABS) {
+        const expectedId = term.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+        if (expectedId === idFragment) return term;
+      }
+      return null;
+    }
+
+    // Function to jump to and highlight input field
+    function jumpToInput(term){
+      const inputEl = document.getElementById(makeId(term));
+      if (inputEl) {
+        inputEl.scrollIntoView({behavior:'smooth', block:'center'});
+        inputEl.focus();
+        // Highlight the input's parent item
+        const itemEl = inputEl.closest('.item');
+        if (itemEl) {
+          itemEl.style.outline = '2px solid var(--accent-2)';
+          itemEl.style.boxShadow = '0 0 0 4px rgba(137,220,235,.25)';
+          setTimeout(()=>{
+            itemEl.style.outline = '';
+            itemEl.style.boxShadow='';
+          }, 1500);
+        }
+      }
+    }
+
     function buildList(){
       listEl.innerHTML = '';
       const q = filterEl.value?.trim().toLowerCase();
@@ -143,11 +176,11 @@
         const div = document.createElement('div');
         div.className = 'item';
         div.innerHTML = `
-          <div class="term">
+          <div class="term" data-term="${term}">
             <span>${term}</span>
             <span class="jump" data-term="${term}">跳到文中</span>
           </div>
-          <input aria-label="${term} 中文意思" placeholder="中文意思…" id="${id}" />
+          <input aria-label="${term} 中文意思" placeholder="中文意思…" id="${id}" data-term="${term}" />
         `;
         listEl.appendChild(div);
       }
@@ -155,15 +188,37 @@
 
     buildList();
 
-    // Delegated jump
+    // Delegated jump - both term and jump button work
     listEl.addEventListener('click', (e)=>{
       const t = e.target;
       if (t.classList.contains('jump')){
         jumpTo(t.dataset.term);
+      } else if (t.classList.contains('term') || t.parentElement.classList.contains('term')){
+        const term = t.dataset.term || t.parentElement.dataset.term;
+        if (term) jumpTo(term);
       }
     });
 
     filterEl.addEventListener('input', buildList);
+
+    // Add focus event listener for input fields
+    listEl.addEventListener('focus', (e)=>{
+      if (e.target.tagName === 'INPUT' && e.target.dataset.term) {
+        jumpTo(e.target.dataset.term);
+      }
+    }, true);
+
+    // Add click handler for article words to jump to corresponding input
+    document.getElementById('article').addEventListener('click', (e)=>{
+      if (e.target.tagName === 'STRONG' && e.target.id) {
+        // Extract term from id (remove 't-' prefix and convert back)
+        const termId = e.target.id.replace(/^t-/, '');
+        const term = findTermByIdFragment(termId);
+        if (term) {
+          jumpToInput(term);
+        }
+      }
+    });
 
     // Persistence helpers
     const KEY = 'geo_vocab_answers_v1';
