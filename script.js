@@ -247,16 +247,24 @@ const aiProgressEl = document.getElementById('ai-progress');
 const progressFillEl = document.getElementById('progress-fill');
 const progressTextEl = document.getElementById('progress-text');
 const scoreSummaryEl = document.getElementById('score-summary');
+const aiIdentityEl = document.getElementById('ai-identity');
 
 // AI Grading Event Listeners
-document.getElementById('ai-grade').addEventListener('click', () => {
+document.getElementById('ai-grade').addEventListener('click', async () => {
   if (aiConfigEl.style.display === 'none') {
     aiConfigEl.style.display = 'block';
     // Load saved API settings
     const savedApiUrl = localStorage.getItem('ai-api-url');
     const savedApiKey = localStorage.getItem('ai-api-key');
+    const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
     if (savedApiUrl) document.getElementById('api-url').value = savedApiUrl;
     if (savedApiKey) document.getElementById('api-key').value = savedApiKey;
+    document.getElementById('ai-model').value = savedModel;
+
+    // Check AI identity when opening config
+    if (savedApiUrl && savedApiKey) {
+      await checkAIIdentity(savedApiUrl, savedApiKey, savedModel);
+    }
   } else {
     aiConfigEl.style.display = 'none';
   }
@@ -270,6 +278,7 @@ document.getElementById('cancel-grade').addEventListener('click', () => {
 document.getElementById('start-grade').addEventListener('click', async () => {
   const apiUrl = document.getElementById('api-url').value.trim();
   const apiKey = document.getElementById('api-key').value.trim();
+  const model = document.getElementById('ai-model').value.trim() || 'gpt-3.5-turbo';
 
   if (!apiUrl || !apiKey) {
     toast('请填写API地址和Key', 'warn');
@@ -279,12 +288,16 @@ document.getElementById('start-grade').addEventListener('click', async () => {
   // Save API settings
   localStorage.setItem('ai-api-url', apiUrl);
   localStorage.setItem('ai-api-key', apiKey);
+  localStorage.setItem('ai-model', model);
 
-  await startAIGrading(apiUrl, apiKey);
+  // Check AI identity first
+  await checkAIIdentity(apiUrl, apiKey, model);
+
+  await startAIGrading(apiUrl, apiKey, model);
 });
 
 // Main AI grading function
-async function startAIGrading(apiUrl, apiKey) {
+async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
   if (gradingInProgress) return;
 
   gradingInProgress = true;
@@ -322,7 +335,7 @@ async function startAIGrading(apiUrl, apiKey) {
       progressTextEl.textContent = `正在处理第${i+1}/${batches.length}批 (${batch.length}个词)...`;
 
       try {
-        const batchResults = await gradeBatch(batch, data, apiUrl, apiKey);
+        const batchResults = await gradeBatch(batch, data, apiUrl, apiKey, model);
         Object.assign(results, batchResults);
         totalProcessed += batch.length;
 
@@ -350,7 +363,7 @@ async function startAIGrading(apiUrl, apiKey) {
 }
 
 // Grade a batch of words
-async function gradeBatch(terms, data, apiUrl, apiKey) {
+async function gradeBatch(terms, data, apiUrl, apiKey, model = 'gpt-3.5-turbo') {
   const prompt = createGradingPrompt(terms, data);
 
   const response = await fetch(apiUrl, {
@@ -360,7 +373,7 @@ async function gradeBatch(terms, data, apiUrl, apiKey) {
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'gpt-3.5-turbo',
+      model: model,
       messages: [{
         role: 'user',
         content: prompt
@@ -383,15 +396,23 @@ async function gradeBatch(terms, data, apiUrl, apiKey) {
 function createGradingPrompt(terms, data) {
   const termsList = terms.map(term => `${term}: ${data[term]}`).join('\n');
 
-  return `请判断以下英文地学词汇的中文翻译是否正确。对于每个词汇，如果翻译基本正确（意思对，允许轻微的用词差异），请回答"正确"；如果翻译明显错误或不相关，请回答"错误"。
+  return `请判断以下英文地学词汇的中文翻译是否正确，并提供正确答案。对于每个词汇，如果翻译基本正确（意思对，允许轻微的用词差异），请回答"正确"；如果翻译明显错误或不相关，请回答"错误"。
+
+无论正确与否，都请提供标准的中文翻译。
 
 词汇列表：
 ${termsList}
 
 请严格按照以下JSON格式回答，不要添加任何其他内容：
 {
-  "词汇1": "正确",
-  "词汇2": "错误",
+  "词汇1": {
+    "判断": "正确",
+    "正确答案": "标准中文翻译"
+  },
+  "词汇2": {
+    "判断": "错误",
+    "正确答案": "标准中文翻译"
+  },
   ...
 }`;
 }
@@ -410,12 +431,28 @@ function parseGradingResponse(aiResponse, terms) {
 
     terms.forEach(term => {
       if (parsed[term]) {
-        results[term] = parsed[term] === '正确';
+        const termData = parsed[term];
+        if (typeof termData === 'object') {
+          // New format with correct answer
+          results[term] = {
+            isCorrect: termData['判断'] === '正确',
+            correctAnswer: termData['正确答案']
+          };
+        } else {
+          // Old format - just boolean
+          results[term] = {
+            isCorrect: termData === '正确',
+            correctAnswer: null
+          };
+        }
       } else {
         // Fallback: check if the response contains the term and result
         const termResult = aiResponse.toLowerCase().includes(term.toLowerCase()) &&
                           aiResponse.toLowerCase().includes('正确');
-        results[term] = termResult;
+        results[term] = {
+          isCorrect: termResult,
+          correctAnswer: null
+        };
       }
     });
 
@@ -427,7 +464,10 @@ function parseGradingResponse(aiResponse, terms) {
       const termLower = term.toLowerCase();
       const responseLower = aiResponse.toLowerCase();
       const isCorrect = responseLower.includes(termLower) && responseLower.includes('正确');
-      results[term] = isCorrect;
+      results[term] = {
+        isCorrect: isCorrect,
+        correctAnswer: null
+      };
     });
     return results;
   }
@@ -435,7 +475,7 @@ function parseGradingResponse(aiResponse, terms) {
 
 // Display grading results
 function displayGradingResults(results, totalCount) {
-  const correctCount = Object.values(results).filter(Boolean).length;
+  const correctCount = Object.values(results).filter(r => r.isCorrect).length;
 
   // Update score summary
   scoreSummaryEl.innerHTML = `
@@ -450,11 +490,11 @@ function displayGradingResults(results, totalCount) {
   `;
 
   // Update individual items
-  Object.entries(results).forEach(([term, isCorrect]) => {
+  Object.entries(results).forEach(([term, result]) => {
     const itemEl = document.querySelector(`[data-term="${term}"]`)?.closest('.item');
     if (itemEl) {
       itemEl.classList.remove('correct', 'incorrect');
-      itemEl.classList.add(isCorrect ? 'correct' : 'incorrect');
+      itemEl.classList.add(result.isCorrect ? 'correct' : 'incorrect');
 
       // Add grade indicator
       const termEl = itemEl.querySelector('.term');
@@ -464,8 +504,21 @@ function displayGradingResults(results, totalCount) {
         indicator.className = 'grade-indicator';
         termEl.appendChild(indicator);
       }
-      indicator.className = `grade-indicator ${isCorrect ? 'correct' : 'incorrect'}`;
-      indicator.textContent = isCorrect ? '✓' : '✗';
+      indicator.className = `grade-indicator ${result.isCorrect ? 'correct' : 'incorrect'}`;
+      indicator.textContent = result.isCorrect ? '✓' : '✗';
+
+      // Add correct answer if available
+      let correctAnswerEl = itemEl.querySelector('.correct-answer');
+      if (result.correctAnswer) {
+        if (!correctAnswerEl) {
+          correctAnswerEl = document.createElement('div');
+          correctAnswerEl.className = 'correct-answer';
+          itemEl.appendChild(correctAnswerEl);
+        }
+        correctAnswerEl.innerHTML = `<strong>正确答案:</strong> ${result.correctAnswer}`;
+      } else if (correctAnswerEl) {
+        correctAnswerEl.remove();
+      }
     }
   });
 
@@ -481,5 +534,65 @@ function clearGradingResults() {
     item.classList.remove('correct', 'incorrect');
     const indicator = item.querySelector('.grade-indicator');
     if (indicator) indicator.remove();
+    const correctAnswer = item.querySelector('.correct-answer');
+    if (correctAnswer) correctAnswer.remove();
   });
 }
+
+// Check AI Identity
+async function checkAIIdentity(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
+  try {
+    aiIdentityEl.textContent = '检测AI身份...';
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{
+          role: 'user',
+          content: '你好，请简单介绍一下你自己，包括你的名称和主要功能。回答请控制在30字以内。'
+        }],
+        temperature: 0.1,
+        max_tokens: 100
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const aiResponse = result.choices[0].message.content.trim();
+
+    // Extract key info from response
+    let identity = aiResponse;
+    if (identity.length > 50) {
+      identity = identity.substring(0, 47) + '...';
+    }
+
+    aiIdentityEl.textContent = identity;
+    aiIdentityEl.style.color = 'var(--ok)';
+
+  } catch (error) {
+    aiIdentityEl.textContent = `连接失败: ${error.message}`;
+    aiIdentityEl.style.color = 'var(--warn)';
+  }
+}
+
+// Initialize AI identity check
+window.addEventListener('load', async () => {
+  const savedApiUrl = localStorage.getItem('ai-api-url');
+  const savedApiKey = localStorage.getItem('ai-api-key');
+  const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
+
+  if (savedApiUrl && savedApiKey) {
+    await checkAIIdentity(savedApiUrl, savedApiKey, savedModel);
+  } else {
+    aiIdentityEl.textContent = '未配置AI';
+    aiIdentityEl.style.color = 'var(--muted)';
+  }
+});

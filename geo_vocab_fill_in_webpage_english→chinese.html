@@ -44,6 +44,7 @@
           <button id="clear">清空答案</button>
           <button id="export">导出CSV</button>
           <button id="ai-grade" class="ai-btn">🤖 AI判题</button>
+          <span id="ai-identity" class="ai-identity">AI身份检测中...</span>
         </div>
 
         <div class="ai-config" id="ai-config" style="display: none;">
@@ -51,6 +52,11 @@
           <div class="ai-input-group">
             <label>API地址：</label>
             <input type="text" id="api-url" placeholder="https://api.openai.com/v1/chat/completions" />
+          </div>
+          <div class="ai-input-group">
+            <label>AI模型：</label>
+            <input type="text" id="ai-model" placeholder="gpt-3.5-turbo" />
+            <div class="model-hint">常用模型：gpt-3.5-turbo, gpt-4, gpt-4-turbo, claude-3-sonnet</div>
           </div>
           <div class="ai-input-group">
             <label>API Key：</label>
