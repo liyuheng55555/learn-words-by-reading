@@ -23,16 +23,19 @@
     <!-- ARTICLE -->
     <section class="card article" id="article">
       <h2>Article</h2>
-      <div id="upload-section">
-        <div class="upload-instruction">
-          <p>请上传包含**标记词汇的英文文章文件：</p>
-        </div>
-        <input type="file" id="article-file" accept=".txt,.md,.html" />
-        <button id="upload-btn">上传文章</button>
-        <div id="upload-status"></div>
+      <div id="mode-toggle">
+        <button id="edit-mode-btn" class="mode-btn">编辑模式</button>
+        <button id="view-mode-btn" class="mode-btn active">阅览模式</button>
       </div>
-      <div id="article-content" style="display: none;">
-        <!-- Article content will be inserted here -->
+      <div id="edit-section" style="display: none;">
+        <textarea id="article-editor" placeholder="请在此输入Markdown格式的文章，使用**标记需要学习的词汇&#10;&#10;例如：&#10;In the thin **atmosphere** that halos our planet..."></textarea>
+        <button id="save-article-btn">保存文章</button>
+        <div id="editor-status"></div>
+      </div>
+      <div id="view-section">
+        <div id="article-content">
+          <!-- Article content will be inserted here -->
+        </div>
       </div>
     </section>
 

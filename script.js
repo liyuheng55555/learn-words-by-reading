@@ -5,12 +5,15 @@ let VOCABS = [];
 const listEl = document.getElementById('list');
 const filterEl = document.getElementById('filter');
 
-// File upload elements
-const fileInput = document.getElementById('article-file');
-const uploadBtn = document.getElementById('upload-btn');
-const uploadStatus = document.getElementById('upload-status');
+// Mode elements
+const editModeBtn = document.getElementById('edit-mode-btn');
+const viewModeBtn = document.getElementById('view-mode-btn');
+const editSection = document.getElementById('edit-section');
+const viewSection = document.getElementById('view-section');
+const articleEditor = document.getElementById('article-editor');
+const saveArticleBtn = document.getElementById('save-article-btn');
+const editorStatus = document.getElementById('editor-status');
 const articleContent = document.getElementById('article-content');
-const uploadSection = document.getElementById('upload-section');
 
 // Build items
 function makeId(term){
@@ -36,23 +39,6 @@ function highlight(el){
   setTimeout(()=>{ el.style.outline = ''; el.style.boxShadow=''; }, 1500);
 }
 
-// File upload handling
-function handleFileUpload(file) {
-  if (!file) {
-    uploadStatus.textContent = '请选择一个文件';
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const content = e.target.result;
-    processArticleContent(content);
-  };
-  reader.onerror = function() {
-    uploadStatus.textContent = '文件读取失败';
-  };
-  reader.readAsText(file, 'UTF-8');
-}
 
 // Process article content and extract vocabulary
 function processArticleContent(content) {
@@ -66,18 +52,14 @@ function processArticleContent(content) {
     // Extract vocabulary from ** marked words
     extractVocabulary(content);
 
-    // Show article content and hide upload section
-    uploadSection.style.display = 'none';
-    articleContent.style.display = 'block';
-
     // Rebuild vocabulary list
     buildList();
 
-    uploadStatus.textContent = '文章上传成功！';
-    uploadStatus.style.color = 'var(--ok)';
+    editorStatus.textContent = '文章保存成功！';
+    editorStatus.style.color = 'var(--ok)';
   } catch (error) {
-    uploadStatus.textContent = '处理文章内容时出错: ' + error.message;
-    uploadStatus.style.color = 'var(--warn)';
+    editorStatus.textContent = '处理文章内容时出错: ' + error.message;
+    editorStatus.style.color = 'var(--warn)';
   }
 }
 
@@ -129,15 +111,34 @@ function findTermByIdFragment(idFragment){
   return null;
 }
 
-// Event listeners for file upload
-uploadBtn.addEventListener('click', () => {
-  handleFileUpload(fileInput.files[0]);
-});
+// Mode switching functions
+function switchToEditMode() {
+  editModeBtn.classList.add('active');
+  viewModeBtn.classList.remove('active');
+  editSection.style.display = 'block';
+  viewSection.style.display = 'none';
+}
 
-fileInput.addEventListener('change', () => {
-  if (fileInput.files.length > 0) {
-    uploadStatus.textContent = '已选择文件: ' + fileInput.files[0].name;
-    uploadStatus.style.color = 'var(--text)';
+function switchToViewMode() {
+  editModeBtn.classList.remove('active');
+  viewModeBtn.classList.add('active');
+  editSection.style.display = 'none';
+  viewSection.style.display = 'block';
+}
+
+// Mode switching event listeners
+editModeBtn.addEventListener('click', switchToEditMode);
+viewModeBtn.addEventListener('click', switchToViewMode);
+
+// Save article event listener
+saveArticleBtn.addEventListener('click', () => {
+  const content = articleEditor.value;
+  if (content.trim()) {
+    processArticleContent(content);
+    switchToViewMode();
+  } else {
+    editorStatus.textContent = '请输入文章内容';
+    editorStatus.style.color = 'var(--warn)';
   }
 });
 
