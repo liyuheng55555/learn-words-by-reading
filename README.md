@@ -1,6 +1,6 @@
 # 地学英语词汇填空练习工具
 
-这是一个用于地学英语词汇学习和练习的网页工具。用户可以通过填空练习来掌握地学相关的英语词汇及其中文含义。
+这是一个用于地学英语词汇学习和练习的网页工具。用户可以通过上传包含**标记词汇的文章文件，并进行填空练习来掌握地学相关的英语词汇及其中文含义。
 
 ## 功能特点
 
@@ -30,9 +30,11 @@
 ## 使用方法
 
 1. 打开 `geo_vocab_fill_in_webpage_english→chinese.html` 文件
-2. 在右侧填空区输入对应词汇的中文含义
-3. 输入内容会自动保存
-4. 可使用以下按钮：
+2. 点击"选择文件"按钮，选择包含**标记词汇的文章文件
+3. 点击"上传文章"按钮上传文件
+4. 在右侧填空区输入对应词汇的中文含义
+5. 输入内容会自动保存
+6. 可使用以下按钮：
    - **保存到本地**：将当前答案保存到浏览器存储
    - **从本地恢复**：从浏览器存储恢复之前保存的答案
    - **清空答案**：清除所有已填写的答案
@@ -42,8 +44,7 @@
 
 ## 词汇列表
 
-工具包含以下地学相关词汇：
-atmosphere, hydrosphere, lithosphere, oxygen, oxide, carbon dioxide, hydrogen, core, crust, mantle, longitude, latitude, horizon, altitude, disaster, mishap, catastrophic, calamity, endanger, jeopardise/jeopardize, destructive, El Nino, greenhouse, phenomenon, pebble, magnet, ore, mineral, marble, quartz, granite, gust, breeze, monsoon, gale, hurricane, tornado, typhoon, volcano, erupt, magma, thermodynamic, smog, fume, mist, tsunami, drought, flooding, torrent
+工具会自动从上传的文章中提取用**标记的地学相关词汇，并生成对应的填空练习。
 
 ## 技术实现
 

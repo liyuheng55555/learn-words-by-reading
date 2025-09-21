@@ -1,10 +1,16 @@
 // --- Vocabulary source list (unique, in requested order) ---
-const VOCABS = [
-  "atmosphere","hydrosphere","lithosphere","oxygen","oxide","carbon dioxide","hydrogen","core","crust","mantle","longitude","latitude","horizon","altitude","disaster","mishap","catastrophic","calamity","endanger","jeopardise/jeopardize","destructive","El Nino","greenhouse","phenomenon","pebble","magnet","ore","mineral","marble","quartz","granite","gust","breeze","monsoon","gale","hurricane","tornado","typhoon","volcano","erupt","magma","thermodynamic","smog","fume","mist","tsunami","drought","flooding","torrent"
-];
+// This will be dynamically populated based on uploaded article
+let VOCABS = [];
 
 const listEl = document.getElementById('list');
 const filterEl = document.getElementById('filter');
+
+// File upload elements
+const fileInput = document.getElementById('article-file');
+const uploadBtn = document.getElementById('upload-btn');
+const uploadStatus = document.getElementById('upload-status');
+const articleContent = document.getElementById('article-content');
+const uploadSection = document.getElementById('upload-section');
 
 // Build items
 function makeId(term){
@@ -16,7 +22,7 @@ function jumpTo(term){
   const byId = document.getElementById('t-' + term.toLowerCase().replace(/[^a-z0-9]+/g,'-'));
   if (byId) { byId.scrollIntoView({behavior:'smooth', block:'center'}); highlight(byId); return; }
   // Fallback: search first <strong> whose text includes the term case-insensitively
-  const strongs = document.querySelectorAll('#article strong');
+  const strongs = document.querySelectorAll('#article-content strong');
   const termLower = term.toLowerCase();
   for (const s of strongs){
     if (s.textContent.toLowerCase().includes(termLower)) { s.scrollIntoView({behavior:'smooth', block:'center'}); highlight(s); return; }
@@ -30,6 +36,71 @@ function highlight(el){
   setTimeout(()=>{ el.style.outline = ''; el.style.boxShadow=''; }, 1500);
 }
 
+// File upload handling
+function handleFileUpload(file) {
+  if (!file) {
+    uploadStatus.textContent = '请选择一个文件';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const content = e.target.result;
+    processArticleContent(content);
+  };
+  reader.onerror = function() {
+    uploadStatus.textContent = '文件读取失败';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// Process article content and extract vocabulary
+function processArticleContent(content) {
+  try {
+    // Display the article content
+    articleContent.innerHTML = content;
+
+    // Extract vocabulary from ** marked words
+    extractVocabulary(content);
+
+    // Show article content and hide upload section
+    uploadSection.style.display = 'none';
+    articleContent.style.display = 'block';
+
+    // Rebuild vocabulary list
+    buildList();
+
+    uploadStatus.textContent = '文章上传成功！';
+    uploadStatus.style.color = 'var(--ok)';
+  } catch (error) {
+    uploadStatus.textContent = '处理文章内容时出错: ' + error.message;
+    uploadStatus.style.color = 'var(--warn)';
+  }
+}
+
+// Extract vocabulary from ** marked words
+function extractVocabulary(content) {
+  // Find all words enclosed in **
+  const regex = /\*\*(.*?)\*\*/g;
+  const matches = content.match(regex);
+
+  if (matches) {
+    const vocabSet = new Set();
+    matches.forEach(match => {
+      // Remove ** and trim whitespace
+      const word = match.replace(/\*\*/g, '').trim();
+      if (word) {
+        vocabSet.add(word);
+      }
+    });
+
+    // Convert set to array and sort
+    VOCABS = Array.from(vocabSet).sort();
+  } else {
+    VOCABS = [];
+  }
+}
+
 // Function to find term by id fragment
 function findTermByIdFragment(idFragment){
   for (const term of VOCABS) {
@@ -38,6 +109,18 @@ function findTermByIdFragment(idFragment){
   }
   return null;
 }
+
+// Event listeners for file upload
+uploadBtn.addEventListener('click', () => {
+  handleFileUpload(fileInput.files[0]);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length > 0) {
+    uploadStatus.textContent = '已选择文件: ' + fileInput.files[0].name;
+    uploadStatus.style.color = 'var(--text)';
+  }
+});
 
 // Function to jump to and highlight input field
 function jumpToInput(term){
@@ -128,11 +211,10 @@ listEl.addEventListener('focus', (e)=>{
 
 // Add click handler for article words to jump to corresponding input
 document.getElementById('article').addEventListener('click', (e)=>{
-  if (e.target.tagName === 'STRONG' && e.target.id) {
-    // Extract term from id (remove 't-' prefix and convert back)
-    const termId = e.target.id.replace(/^t-/, '');
-    const term = findTermByIdFragment(termId);
-    if (term) {
+  if (e.target.tagName === 'STRONG') {
+    // Extract term from text content
+    const term = e.target.textContent.trim();
+    if (term && VOCABS.includes(term)) {
       jumpToInput(term);
     }
   }

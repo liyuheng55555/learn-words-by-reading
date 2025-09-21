@@ -102,6 +102,42 @@ main {
   padding: 22px 22px 8px;
 }
 
+.upload-instruction {
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+#article-file {
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid rgba(38,139,210,.3);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+#upload-btn {
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#upload-btn:hover {
+  opacity: 0.9;
+}
+
+#upload-status {
+  min-height: 20px;
+  color: var(--text);
+  font-size: 14px;
+}
+
 .article h2 {
   margin-top: 0;
   margin-bottom: 8px;
