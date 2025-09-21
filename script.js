@@ -86,17 +86,20 @@ function extractVocabulary(content) {
   const matches = content.match(regex);
 
   if (matches) {
+    // Use an array to preserve order and a set to track duplicates
+    const vocabList = [];
     const vocabSet = new Set();
     matches.forEach(match => {
       // Remove ** and trim whitespace
       const word = match.replace(/\*\*/g, '').trim();
-      if (word) {
+      if (word && !vocabSet.has(word)) {
         vocabSet.add(word);
+        vocabList.push(word);
       }
     });
 
-    // Convert set to array and sort
-    VOCABS = Array.from(vocabSet).sort();
+    // Assign ordered list to VOCABS
+    VOCABS = vocabList;
   } else {
     VOCABS = [];
   }
