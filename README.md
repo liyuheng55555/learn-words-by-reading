@@ -1,0 +1,78 @@
+# 地学英语词汇填空练习工具
+
+这是一个用于地学英语词汇学习和练习的网页工具。用户可以通过填空练习来掌握地学相关的英语词汇及其中文含义。
+
+## 功能特点
+
+1. **双语词汇练习**：
+   - 左侧显示包含地学专业词汇的英文文章
+   - 右侧提供对应词汇的中文释义填空
+
+2. **交互式学习**：
+   - 点击文章中的词汇可跳转到对应的填空区域
+   - 在填空区域输入答案后会自动保存到浏览器本地存储
+   - 点击词汇可跳转回文章中的对应位置
+
+3. **数据持久化**：
+   - 自动保存用户的填空答案到浏览器的 localStorage
+   - 提供手动保存和恢复功能
+   - 支持导出为 CSV 格式文件
+
+4. **主题切换**：
+   - 支持深色和浅色两种主题模式
+   - 用户偏好设置会自动保存
+
+5. **AI智能判题**（实验性功能）：
+   - 可连接 OpenAI、Claude 等大语言模型 API 进行智能判题
+   - 提供词汇翻译正确性检查和标准答案提示
+   - 支持多种模型（gpt-3.5-turbo、gpt-4、claude-3-sonnet等）
+
+## 使用方法
+
+1. 打开 `geo_vocab_fill_in_webpage_english→chinese.html` 文件
+2. 在右侧填空区输入对应词汇的中文含义
+3. 输入内容会自动保存
+4. 可使用以下按钮：
+   - **保存到本地**：将当前答案保存到浏览器存储
+   - **从本地恢复**：从浏览器存储恢复之前保存的答案
+   - **清空答案**：清除所有已填写的答案
+   - **导出CSV**：将词汇和答案导出为CSV文件
+   - **🤖 AI判题**：连接AI API进行智能判题
+   - **🔍 检测AI身份**：查看当前连接的AI模型信息
+
+## 词汇列表
+
+工具包含以下地学相关词汇：
+atmosphere, hydrosphere, lithosphere, oxygen, oxide, carbon dioxide, hydrogen, core, crust, mantle, longitude, latitude, horizon, altitude, disaster, mishap, catastrophic, calamity, endanger, jeopardise/jeopardize, destructive, El Nino, greenhouse, phenomenon, pebble, magnet, ore, mineral, marble, quartz, granite, gust, breeze, monsoon, gale, hurricane, tornado, typhoon, volcano, erupt, magma, thermodynamic, smog, fume, mist, tsunami, drought, flooding, torrent
+
+## 技术实现
+
+- 纯前端实现，无需服务器支持
+- 使用 HTML、CSS 和 JavaScript 构建
+- 数据存储在浏览器本地，不会上传到任何服务器
+- 完全离线运行
+
+## 主题定制
+
+项目使用 Solarized 配色方案：
+- 深色主题：默认主题，适合夜间使用
+- 浅色主题：适合白天或明亮环境使用
+
+## AI判题配置
+
+要使用AI判题功能，需要配置：
+1. API地址：例如 `https://api.openai.com/v1/chat/completions`
+2. AI模型：例如 `gpt-3.5-turbo` 或 `claude-3-sonnet`
+3. API Key：从对应平台获取的API密钥
+
+## 文件说明
+
+- `geo_vocab_fill_in_webpage_english→chinese.html`：主页面文件
+- `styles.css`：样式文件
+- `script.js`：交互逻辑文件
+
+## 注意事项
+
+- 本工具完全在浏览器中运行，数据保存在本地
+- 使用AI判题功能需要有效的API密钥
+- 导出的CSV文件可使用Excel等表格软件打开
