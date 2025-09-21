@@ -57,8 +57,11 @@ function handleFileUpload(file) {
 // Process article content and extract vocabulary
 function processArticleContent(content) {
   try {
+    // Convert **markdown** to <strong> HTML tags and preserve paragraph structure
+    const formattedContent = convertMarkdownToHtml(content);
+
     // Display the article content
-    articleContent.innerHTML = content;
+    articleContent.innerHTML = formattedContent;
 
     // Extract vocabulary from ** marked words
     extractVocabulary(content);
@@ -76,6 +79,22 @@ function processArticleContent(content) {
     uploadStatus.textContent = '处理文章内容时出错: ' + error.message;
     uploadStatus.style.color = 'var(--warn)';
   }
+}
+
+// Convert markdown **word** to <strong>word</strong> and preserve paragraph structure
+function convertMarkdownToHtml(content) {
+  // Split content into paragraphs (separated by double newlines)
+  const paragraphs = content.split('\n\n');
+
+  // Process each paragraph
+  const htmlParagraphs = paragraphs.map(paragraph => {
+    // Convert **word** to <strong>word</strong>
+    let htmlParagraph = paragraph.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Wrap in <p> tag
+    return `<p>${htmlParagraph}</p>`;
+  });
+
+  return htmlParagraphs.join('\n');
 }
 
 // Extract vocabulary from ** marked words
@@ -210,7 +229,7 @@ listEl.addEventListener('focus', (e)=>{
 }, true);
 
 // Add click handler for article words to jump to corresponding input
-document.getElementById('article').addEventListener('click', (e)=>{
+document.getElementById('article-content').addEventListener('click', (e)=>{
   if (e.target.tagName === 'STRONG') {
     // Extract term from text content
     const term = e.target.textContent.trim();
