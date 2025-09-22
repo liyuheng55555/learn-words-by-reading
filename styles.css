@@ -222,8 +222,7 @@ main {
   align-items: center;
 }
 
-.generator-row input[type="text"],
-.generator-row input[type="number"] {
+.generator-row input[type="text"] {
   flex: 1 1 160px;
   padding: 8px 10px;
   border-radius: 10px;
@@ -231,10 +230,6 @@ main {
   background: var(--card);
   color: var(--text);
   font-size: 14px;
-}
-
-.generator-row input[type="number"] {
-  max-width: 120px;
 }
 
 .generator-actions {
@@ -248,6 +243,31 @@ main {
   min-height: 18px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.fab {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 90;
+  padding: 14px 22px;
+  border-radius: 999px;
+  box-shadow: 0 18px 35px rgba(0,0,0,.35);
+}
+
+.fab.ai-btn {
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .fab {
+    right: 18px;
+    bottom: 18px;
+    padding: 12px 18px;
+  }
 }
 
 .article p {
@@ -565,4 +585,11 @@ button:hover, .btn:hover {
   color: var(--muted);
   margin-top: 4px;
   line-height: 1.4;
+}
+
+.ai-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 8px 0 0;
 }

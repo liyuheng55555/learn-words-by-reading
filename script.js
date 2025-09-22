@@ -16,10 +16,11 @@ const editorStatus = document.getElementById('editor-status');
 const articleContent = document.getElementById('article-content');
 const generatorWordsEl = document.getElementById('generator-words');
 const generatorTopicEl = document.getElementById('generator-topic');
-const generatorLengthEl = document.getElementById('generator-length');
-const generatorParagraphsEl = document.getElementById('generator-paragraphs');
 const generateArticleBtn = document.getElementById('generate-article-btn');
 const generatorStatusEl = document.getElementById('generator-status');
+
+const DEFAULT_ARTICLE_WORD_GOAL = 220;
+const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
 
 // Build items
 function makeId(term){
@@ -81,7 +82,9 @@ function getSavedAIConfig(){
   return { apiUrl, apiKey, model };
 }
 
-function createArticlePrompt(words, topic, wordGoal, paragraphCount){
+function createArticlePrompt(words, topic){
+  const wordGoal = DEFAULT_ARTICLE_WORD_GOAL;
+  const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
   const topicLine = topic ? `主题提示：${topic}\n\n` : '';
   return `${topicLine}请写一篇面向地学学习者的英文短文，使用Markdown段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 文章总长度约 ${wordGoal} 个英文单词，可上下浮动 10%。\n- 分成 ${paragraphCount} 个段落。\n- 下列每个词必须至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 内容要自然流畅，信息准确，可适当加入背景、例子或解释。\n\n目标词汇：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
@@ -95,16 +98,6 @@ async function handleGenerateArticle(){
     generatorWordsEl?.focus();
     return;
   }
-
-  let wordGoal = parseInt(generatorLengthEl?.value || '220', 10);
-  if (!Number.isFinite(wordGoal)) wordGoal = 220;
-  wordGoal = Math.min(Math.max(wordGoal, 80), 600);
-  if (generatorLengthEl) generatorLengthEl.value = String(wordGoal);
-
-  let paragraphCount = parseInt(generatorParagraphsEl?.value || '3', 10);
-  if (!Number.isFinite(paragraphCount)) paragraphCount = 3;
-  paragraphCount = Math.min(Math.max(paragraphCount, 1), 6);
-  if (generatorParagraphsEl) generatorParagraphsEl.value = String(paragraphCount);
 
   const topic = (generatorTopicEl?.value || '').trim();
   const { apiUrl, apiKey, model } = getSavedAIConfig();
@@ -122,7 +115,7 @@ async function handleGenerateArticle(){
     generateArticleBtn.textContent = '生成中…';
     setGeneratorStatus('正在请求AI生成文章…', 'info');
 
-    const prompt = createArticlePrompt(words, topic, wordGoal, paragraphCount);
+    const prompt = createArticlePrompt(words, topic);
     const body = {
       model,
       messages: [
@@ -134,7 +127,7 @@ async function handleGenerateArticle(){
       ],
       temperature: 0.65,
       top_p: 0.9,
-      max_tokens: Math.min(1200, Math.round(wordGoal * 4.2))
+      max_tokens: Math.min(1200, Math.round(DEFAULT_ARTICLE_WORD_GOAL * 4.2))
     };
 
     const response = await fetch(apiUrl, {
@@ -543,6 +536,7 @@ document.getElementById('start-grade').addEventListener('click', async () => {
   const model = document.getElementById('ai-model').value.trim() || 'gpt-3.5-turbo';
 
   if (!apiUrl || !apiKey) {
+    aiConfigEl.style.display = 'block';
     toast('请填写API地址和Key', 'warn');
     return;
   }

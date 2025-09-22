@@ -58,18 +58,12 @@
 
           <div class="generator-card" id="article-generator">
             <h5>AI文章生成</h5>
-            <div class="generator-hint">输入目标词汇后，点击生成即可创建带有 ** 标注词汇的英文文章。该功能与下方 API 设置共用同一 Key。</div>
+            <div class="generator-hint">输入目标词汇后，点击生成即可创建带有 ** 标注词汇的英文文章（默认约220词，3段落）。该功能与下方 API 设置共用同一 Key。</div>
             <label class="generator-label" for="generator-words">目标词汇（支持换行、逗号、顿号分隔）</label>
             <textarea id="generator-words" placeholder="例如：plate tectonics, sedimentary basin, geothermal gradient"></textarea>
             <div class="generator-row">
               <label class="generator-label" for="generator-topic">可选主题</label>
               <input id="generator-topic" type="text" placeholder="例如：火山活动对地貌的影响" />
-            </div>
-            <div class="generator-row">
-              <label class="generator-label" for="generator-length">目标词数</label>
-              <input id="generator-length" type="number" min="80" max="600" step="10" value="220" />
-              <label class="generator-label" for="generator-paragraphs">段落数</label>
-              <input id="generator-paragraphs" type="number" min="1" max="6" value="3" />
             </div>
             <div class="generator-actions">
               <button id="generate-article-btn" class="ai-btn">✨ AI生成文章</button>
@@ -92,8 +86,8 @@
               <label>API Key：</label>
               <input type="password" id="api-key" placeholder="sk-..." />
             </div>
+            <div class="ai-hint">配置完成后，点击右下角“开始判题”按钮执行批量判题。</div>
             <div class="ai-controls">
-              <button id="start-grade">开始判题</button>
               <button id="cancel-grade">取消</button>
             </div>
             <div class="ai-progress" id="ai-progress" style="display: none;">
@@ -114,6 +108,8 @@
       </div>
     </aside>
   </main>
+
+  <button id="start-grade" class="ai-btn fab" aria-label="开始AI判题">📝 开始判题</button>
 
   <script src="script.js"></script>
 </body>
