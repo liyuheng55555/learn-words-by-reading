@@ -165,6 +165,91 @@ main {
   font-size: 22px;
 }
 
+.generator-card {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid rgba(38,139,210,.25);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.generator-card h5 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.generator-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.generator-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.generator-row .generator-label {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  min-width: 80px;
+}
+
+#generator-words {
+  width: 100%;
+  min-height: 90px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(38,139,210,.3);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.generator-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.generator-row input[type="text"],
+.generator-row input[type="number"] {
+  flex: 1 1 160px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(38,139,210,.3);
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.generator-row input[type="number"] {
+  max-width: 120px;
+}
+
+.generator-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.generator-status {
+  margin-top: 10px;
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .article p {
   text-align: justify;
 }
@@ -336,6 +421,16 @@ button:hover, .btn:hover {
 .ai-config h4 {
   margin: 0 0 12px 0;
   color: var(--accent);
+}
+
+.ai-section > h5 {
+  margin: 18px 0 10px;
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.ai-section {
+  margin-top: 12px;
 }
 
 .ai-input-group {

@@ -14,6 +14,12 @@ const articleEditor = document.getElementById('article-editor');
 const saveArticleBtn = document.getElementById('save-article-btn');
 const editorStatus = document.getElementById('editor-status');
 const articleContent = document.getElementById('article-content');
+const generatorWordsEl = document.getElementById('generator-words');
+const generatorTopicEl = document.getElementById('generator-topic');
+const generatorLengthEl = document.getElementById('generator-length');
+const generatorParagraphsEl = document.getElementById('generator-paragraphs');
+const generateArticleBtn = document.getElementById('generate-article-btn');
+const generatorStatusEl = document.getElementById('generator-status');
 
 // Build items
 function makeId(term){
@@ -37,6 +43,131 @@ function highlight(el){
   el.style.outline = '2px solid var(--accent-2)';
   el.style.boxShadow = '0 0 0 4px rgba(137,220,235,.25)';
   setTimeout(()=>{ el.style.outline = ''; el.style.boxShadow=''; }, 1500);
+}
+
+function parseGeneratorWords(raw){
+  if (!raw) return [];
+  const parts = raw.split(/[\n,，、；;]+/);
+  const seen = new Set();
+  const words = [];
+  for (const part of parts){
+    const word = part.trim();
+    if (word && !seen.has(word)){
+      seen.add(word);
+      words.push(word);
+    }
+  }
+  return words;
+}
+
+function setGeneratorStatus(message, kind = 'info'){
+  if (!generatorStatusEl) return;
+  const palette = {
+    info: 'var(--muted)',
+    ok: 'var(--ok)',
+    warn: 'var(--warn)'
+  };
+  generatorStatusEl.textContent = message || '';
+  generatorStatusEl.style.color = palette[kind] || palette.info;
+}
+
+function getSavedAIConfig(){
+  const apiUrlInput = document.getElementById('api-url');
+  const apiKeyInput = document.getElementById('api-key');
+  const modelInput = document.getElementById('ai-model');
+  const apiUrl = (localStorage.getItem('ai-api-url') || apiUrlInput?.value || '').trim();
+  const apiKey = (localStorage.getItem('ai-api-key') || apiKeyInput?.value || '').trim();
+  const model = (localStorage.getItem('ai-model') || modelInput?.value || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
+  return { apiUrl, apiKey, model };
+}
+
+function createArticlePrompt(words, topic, wordGoal, paragraphCount){
+  const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
+  const topicLine = topic ? `主题提示：${topic}\n\n` : '';
+  return `${topicLine}请写一篇面向地学学习者的英文短文，使用Markdown段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 文章总长度约 ${wordGoal} 个英文单词，可上下浮动 10%。\n- 分成 ${paragraphCount} 个段落。\n- 下列每个词必须至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 内容要自然流畅，信息准确，可适当加入背景、例子或解释。\n\n目标词汇：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
+}
+
+async function handleGenerateArticle(){
+  if (!generateArticleBtn) return;
+  const words = parseGeneratorWords(generatorWordsEl?.value || '');
+  if (!words.length){
+    setGeneratorStatus('请至少输入一个目标词汇', 'warn');
+    generatorWordsEl?.focus();
+    return;
+  }
+
+  let wordGoal = parseInt(generatorLengthEl?.value || '220', 10);
+  if (!Number.isFinite(wordGoal)) wordGoal = 220;
+  wordGoal = Math.min(Math.max(wordGoal, 80), 600);
+  if (generatorLengthEl) generatorLengthEl.value = String(wordGoal);
+
+  let paragraphCount = parseInt(generatorParagraphsEl?.value || '3', 10);
+  if (!Number.isFinite(paragraphCount)) paragraphCount = 3;
+  paragraphCount = Math.min(Math.max(paragraphCount, 1), 6);
+  if (generatorParagraphsEl) generatorParagraphsEl.value = String(paragraphCount);
+
+  const topic = (generatorTopicEl?.value || '').trim();
+  const { apiUrl, apiKey, model } = getSavedAIConfig();
+
+  if (!apiUrl || !apiKey){
+    setGeneratorStatus('请先在右侧配置AI API地址与Key', 'warn');
+    return;
+  }
+
+  const originalLabel = generateArticleBtn.dataset.originalText || generateArticleBtn.textContent;
+
+  try {
+    generateArticleBtn.disabled = true;
+    generateArticleBtn.dataset.originalText = originalLabel;
+    generateArticleBtn.textContent = '生成中…';
+    setGeneratorStatus('正在请求AI生成文章…', 'info');
+
+    const prompt = createArticlePrompt(words, topic, wordGoal, paragraphCount);
+    const body = {
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert science writer who produces fluent, engaging English articles in Markdown without extra commentary.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.65,
+      top_p: 0.9,
+      max_tokens: Math.min(1200, Math.round(wordGoal * 4.2))
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok){
+      const errorText = await response.text();
+      throw new Error(`API请求失败: ${response.status} ${response.statusText} | ${errorText}`);
+    }
+
+    const result = await response.json();
+    const content = result?.choices?.[0]?.message?.content?.trim();
+    if (!content){
+      throw new Error('AI未返回文章内容');
+    }
+
+    articleEditor.value = content;
+    processArticleContent(content);
+    switchToViewMode();
+    setGeneratorStatus('AI文章生成完成，已自动插入编辑器。', 'ok');
+  } catch (error) {
+    console.error('[Article Generator] 生成文章失败:', error);
+    setGeneratorStatus(`生成失败：${error.message}`, 'warn');
+  } finally {
+    generateArticleBtn.disabled = false;
+    generateArticleBtn.textContent = generateArticleBtn.dataset.originalText || '✨ AI生成文章';
+  }
 }
 
 
@@ -144,6 +275,10 @@ saveArticleBtn.addEventListener('click', () => {
     editorStatus.style.color = 'var(--warn)';
   }
 });
+
+if (generateArticleBtn){
+  generateArticleBtn.addEventListener('click', handleGenerateArticle);
+}
 
 // Function to jump to and highlight input field
 function jumpToInput(term){
@@ -358,6 +493,7 @@ const aiIdentityCheckBtn = document.getElementById('ai-identity-check');
 document.getElementById('ai-grade').addEventListener('click', async () => {
   if (aiConfigEl.style.display === 'none') {
     aiConfigEl.style.display = 'block';
+    setGeneratorStatus('');
     // Load saved API settings
     const savedApiUrl = localStorage.getItem('ai-api-url');
     const savedApiKey = localStorage.getItem('ai-api-key');
@@ -377,7 +513,7 @@ aiIdentityCheckBtn.addEventListener('click', async () => {
   const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
 
   if (!savedApiUrl || !savedApiKey) {
-    alert('请先配置API地址和Key！\n\n点击"🤖 AI判题"按钮进行配置。');
+    alert('请先配置API地址和Key！\n\n点击"🤖 AI工具箱"按钮进行配置。');
     return;
   }
 
