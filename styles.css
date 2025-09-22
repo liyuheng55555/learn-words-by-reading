@@ -311,6 +311,16 @@ main {
   margin: 8px 0 12px;
 }
 
+.sync-btn {
+  background: linear-gradient(45deg, #6366f1, #22d3ee) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.sync-btn:hover {
+  opacity: 0.9;
+}
+
 button, .btn {
   appearance: none;
   border: 1px solid rgba(38,139,210,.4);
@@ -542,6 +552,59 @@ button:hover, .btn:hover {
 .score-line strong {
   color: var(--accent);
   font-weight: 700;
+}
+
+.sync-status {
+  margin-top: 10px;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-status.ok {
+  color: var(--ok);
+}
+
+.sync-status.warn {
+  color: var(--warn);
+}
+
+.server-scores {
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(38,139,210,.25);
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.server-scores h5 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.server-scores table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.server-scores th,
+.server-scores td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(38,139,210,.2);
+  text-align: left;
+  color: var(--text);
+}
+
+.server-scores tr:last-child td {
+  border-bottom: none;
+}
+
+.server-scores .empty {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
 }
 
 

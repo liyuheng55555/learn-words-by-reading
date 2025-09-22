@@ -19,6 +19,17 @@ const generatorTopicEl = document.getElementById('generator-topic');
 const generateArticleBtn = document.getElementById('generate-article-btn');
 const generatorStatusEl = document.getElementById('generator-status');
 const startGradeBtn = document.getElementById('start-grade');
+const syncServerBtn = document.getElementById('sync-server');
+const syncStatusEl = document.getElementById('sync-status');
+const serverScoresEl = document.getElementById('server-scores');
+const scoreApiUrlInput = document.getElementById('score-api-url');
+
+if (syncServerBtn && !syncServerBtn.dataset.originalText) {
+  syncServerBtn.dataset.originalText = syncServerBtn.textContent;
+}
+
+renderServerScores([]);
+setSyncStatus('', 'info');
 
 const DEFAULT_ARTICLE_WORD_GOAL = 220;
 const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
@@ -113,6 +124,97 @@ function resetStartGradeButton(){
   if (!startGradeBtn) return;
   startGradeBtn.disabled = false;
   startGradeBtn.textContent = startGradeBtn.dataset.originalText || '📝 开始判题';
+}
+
+function setSyncStatus(message, kind = 'info'){
+  if (!syncStatusEl) return;
+  syncStatusEl.classList.remove('ok', 'warn');
+  if (kind === 'ok') syncStatusEl.classList.add('ok');
+  if (kind === 'warn') syncStatusEl.classList.add('warn');
+  if (kind !== 'ok' && kind !== 'warn') syncStatusEl.classList.remove('ok', 'warn');
+  syncStatusEl.textContent = message || '';
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderServerScores(scores){
+  if (!serverScoresEl) return;
+  if (!scores || !scores.length){
+    serverScoresEl.innerHTML = '<div class="empty">服务器暂无词汇记录。</div>';
+    return;
+  }
+
+  const rows = scores.map(({ term, score }) => {
+    const safeTerm = escapeHtml(term);
+    const val = Number(score);
+    const displayScore = Number.isFinite(val) ? val.toFixed(2) : '0.00';
+    return `<tr><td>${safeTerm}</td><td>${displayScore}</td></tr>`;
+  }).join('');
+
+  serverScoresEl.innerHTML = `
+    <h5>服务器词表得分</h5>
+    <table>
+      <thead><tr><th>词汇</th><th>累计分数</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function getScoreApiBase(){
+  const inputVal = scoreApiUrlInput?.value?.trim();
+  if (inputVal) return inputVal;
+  const stored = localStorage.getItem('score-api-url');
+  if (stored) return stored;
+  return 'http://localhost:4000';
+}
+
+function collectSimilarityPayload(){
+  const results = [];
+  if (!LAST_GRADING_RESULTS) return results;
+  for (const [term, data] of Object.entries(LAST_GRADING_RESULTS)){
+    if (!data) continue;
+    if (typeof data.similarity === 'number'){
+      results.push({ term, similarity: data.similarity });
+    }
+  }
+  return results;
+}
+
+async function fetchServerScores({ quiet = false } = {}) {
+  try {
+    const base = getScoreApiBase();
+    const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
+    }
+    const data = await response.json();
+    if (Array.isArray(data.scores)) {
+      renderServerScores(data.scores);
+      if (!quiet) {
+        setSyncStatus(`已获取服务器记录（${data.scores.length} 个词）`, 'ok');
+      }
+    } else if (!quiet) {
+      setSyncStatus('服务器未返回有效数据', 'warn');
+    }
+  } catch (error) {
+    if (!quiet) {
+      setSyncStatus(`无法获取服务器分数：${error.message}`, 'warn');
+    }
+  }
 }
 
 function getSavedAIConfig(){
@@ -322,6 +424,55 @@ saveArticleBtn.addEventListener('click', () => {
 
 if (generateArticleBtn){
   generateArticleBtn.addEventListener('click', handleGenerateArticle);
+}
+
+if (syncServerBtn){
+  syncServerBtn.addEventListener('click', async () => {
+    const payload = collectSimilarityPayload();
+    if (!payload.length){
+      setSyncStatus('请先完成AI判题后再同步。', 'warn');
+      toast('没有可同步的判题分数', 'warn');
+      return;
+    }
+
+    const base = getScoreApiBase();
+    const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
+    const originalLabel = syncServerBtn.dataset.originalText || syncServerBtn.textContent;
+    syncServerBtn.dataset.originalText = originalLabel;
+    syncServerBtn.disabled = true;
+    syncServerBtn.textContent = '同步中…';
+    setSyncStatus('正在同步判题结果到服务器…', 'info');
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ results: payload })
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
+      }
+
+      const data = await response.json();
+      const scores = Array.isArray(data.scores) ? data.scores : [];
+      renderServerScores(scores);
+      const updatedCount = data.updated ?? payload.length;
+      setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇`, 'ok');
+      toast('服务器词表已更新 ✓', 'ok');
+      localStorage.setItem('score-api-url', base);
+    } catch (error) {
+      console.error('[Sync Scores] 同步失败:', error);
+      setSyncStatus(`同步失败：${error.message}`, 'warn');
+      toast('同步失败：' + error.message, 'warn');
+    } finally {
+      syncServerBtn.disabled = false;
+      syncServerBtn.textContent = syncServerBtn.dataset.originalText || '⬆️ 同步到服务器';
+    }
+  });
 }
 
 // Function to jump to and highlight input field
@@ -548,6 +699,12 @@ document.getElementById('ai-grade').addEventListener('click', async () => {
     if (savedApiUrl) document.getElementById('api-url').value = savedApiUrl;
     if (savedApiKey) document.getElementById('api-key').value = savedApiKey;
     document.getElementById('ai-model').value = savedModel;
+    const savedScoreApi = localStorage.getItem('score-api-url');
+    if (scoreApiUrlInput) {
+      scoreApiUrlInput.value = savedScoreApi || scoreApiUrlInput.value || 'http://localhost:4000';
+    }
+    renderServerScores([]);
+    fetchServerScores({ quiet: true });
   } else {
     aiConfigEl.style.display = 'none';
   }
