@@ -21,6 +21,8 @@ const generatorStatusEl = document.getElementById('generator-status');
 
 const DEFAULT_ARTICLE_WORD_GOAL = 220;
 const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
+const SIMILARITY_THRESHOLD_STRICT = 0.85;
+const SIMILARITY_THRESHOLD_PARTIAL = 0.6;
 
 // Build items
 function makeId(term){
@@ -59,6 +61,32 @@ function parseGeneratorWords(raw){
     }
   }
   return words;
+}
+
+function escapeRegExp(str){
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function makeTermRegex(term){
+  const escaped = escapeRegExp(term.trim());
+  if (!escaped) return null;
+  if (/\s/.test(term)) {
+    return new RegExp(escaped.replace(/\s+/g, '\\s+'), 'i');
+  }
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+}
+
+function findMissingTerms(content, words){
+  const text = content.replace(/\*\*/g, '');
+  const missing = [];
+  for (const word of words){
+    const regex = makeTermRegex(word);
+    if (!regex) continue;
+    if (!regex.test(text)){
+      missing.push(word);
+    }
+  }
+  return missing;
 }
 
 function setGeneratorStatus(message, kind = 'info'){
@@ -153,7 +181,15 @@ async function handleGenerateArticle(){
     articleEditor.value = content;
     processArticleContent(content);
     switchToViewMode();
-    setGeneratorStatus('AI文章生成完成，已自动插入编辑器。', 'ok');
+    const missingTerms = findMissingTerms(content, words);
+    if (missingTerms.length){
+      const message = `⚠️ 已生成文章，但缺少 ${missingTerms.length} 个词：${missingTerms.join('，')}`;
+      setGeneratorStatus(message, 'warn');
+      toast('生成完成，但存在缺失词汇，请手动补充。', 'warn');
+    } else {
+      setGeneratorStatus('AI文章生成完成，所有目标词汇均已覆盖 ✓', 'ok');
+      toast('文章生成成功并包含全部目标词汇！', 'ok');
+    }
   } catch (error) {
     console.error('[Article Generator] 生成文章失败:', error);
     setGeneratorStatus(`生成失败：${error.message}`, 'warn');
@@ -690,29 +726,35 @@ async function gradeBatch(terms, data, apiUrl, apiKey, model = 'gpt-3.5-turbo') 
   return parsedResults;
 }
 
+function clampSimilarity(value) {
+  const num = typeof value === 'number' ? value : parseFloat(value);
+  if (!Number.isFinite(num)) return null;
+  const clamped = Math.min(Math.max(num, 0), 1);
+  return Math.round(clamped * 1000) / 1000;
+}
+
 // Create grading prompt for AI
 function createGradingPrompt(terms, data) {
-  const termsList = terms.map(term => `${term}: ${data[term]}`).join('\n');
+  const termsList = terms.map(term => `- 英文词汇: ${term}\n  学生翻译: ${data[term] || '(空白)'}`).join('\n');
 
-  return `请判断以下英文地学词汇的中文翻译是否正确，并提供正确答案。对于每个词汇，如果翻译基本正确（意思对，允许轻微的用词差异），请回答"正确"；如果翻译明显错误或不相关，请回答"错误"。
+  return `你是一名精通地学的双语教师，需要判断学生给出的中文翻译与英文术语的语义相似度。语义评估要考虑术语在地学语境下的涵义、常见搭配及上下文含义，而不仅仅是字面匹配。
 
-无论正确与否，都请提供标准的中文翻译。
+请对每个词汇：
+1. 给出最标准、最常用的中文翻译（可包含多个词，确保含义准确）。
+2. 评估学生答案与标准答案在语义上的相似度，相似度用 0~1 的小数表示：0 代表完全错误，1 代表完全一致。允许保留三位小数。
+3. 如有需要，可给出简短说明（10~25个字），解释主要差异或匹配亮点。
 
-词汇列表：
-${termsList}
-
-请严格按照以下JSON格式回答，不要添加任何其他内容：
+务必只输出 JSON，不要解释。JSON 格式如下：
 {
-  "词汇1": {
-    "判断": "正确",
-    "正确答案": "标准中文翻译"
-  },
-  "词汇2": {
-    "判断": "错误",
-    "正确答案": "标准中文翻译"
-  },
-  ...
-}`;
+  "英文词汇": {
+    "标准答案": "标准中文翻译",
+    "相似度": 0.000,
+    "说明": "可选，若无则留空字符串"
+  }
+}
+
+待评估的词汇与学生答案：
+${termsList}`;
 }
 
 // Parse AI grading response
@@ -738,38 +780,36 @@ function parseGradingResponse(aiResponse, terms) {
     terms.forEach(term => {
       console.log(`[Parse Response] 处理词汇: ${term}`);
 
-      if (parsed[term]) {
-        const termData = parsed[term];
-        console.log(`[Parse Response] ${term} 的数据:`, termData);
+      const termData = parsed[term] || parsed[term.trim()] || null;
+      if (termData && typeof termData === 'object') {
+        const similarityRaw = termData['相似度'] ?? termData['similarity'] ?? termData['score'];
+        const similarity = clampSimilarity(typeof similarityRaw === 'string' ? parseFloat(similarityRaw) : similarityRaw);
+        const standardAnswer = (termData['标准答案'] ?? termData['正确答案'] ?? '').toString().trim();
+        const explanation = (termData['说明'] ?? termData['解释'] ?? '').toString().trim();
 
-        if (typeof termData === 'object') {
-          // New format with correct answer
-          const isCorrect = termData['判断'] === '正确';
-          const correctAnswer = termData['正确答案'];
-          results[term] = {
-            isCorrect: isCorrect,
-            correctAnswer: correctAnswer
-          };
-          console.log(`[Parse Response] ${term} 新格式解析 - 正确性: ${isCorrect}, 答案: ${correctAnswer}`);
-        } else {
-          // Old format - just boolean
-          const isCorrect = termData === '正确';
-          results[term] = {
-            isCorrect: isCorrect,
-            correctAnswer: null
-          };
-          console.log(`[Parse Response] ${term} 旧格式解析 - 正确性: ${isCorrect}`);
-        }
+        results[term] = {
+          similarity: typeof similarity === 'number' ? similarity : null,
+          standardAnswer: standardAnswer || null,
+          explanation: explanation || null
+        };
+
+        console.log(`[Parse Response] ${term} 解析成功 - 相似度:`, results[term].similarity, '标准答案:', results[term].standardAnswer, '说明:', results[term].explanation);
+      } else if (typeof termData === 'string') {
+        // Backward compatibility (旧格式)
+        const isCorrect = termData === '正确';
+        results[term] = {
+          similarity: isCorrect ? 1 : 0,
+          standardAnswer: null,
+          explanation: null
+        };
+        console.log(`[Parse Response] ${term} 使用旧格式字符串 - 相似度模拟:`, results[term].similarity);
       } else {
         console.log(`[Parse Response] ${term} 未在解析结果中找到，使用fallback`);
-        // Fallback: check if the response contains the term and result
-        const termResult = aiResponse.toLowerCase().includes(term.toLowerCase()) &&
-                          aiResponse.toLowerCase().includes('正确');
         results[term] = {
-          isCorrect: termResult,
-          correctAnswer: null
+          similarity: null,
+          standardAnswer: null,
+          explanation: null
         };
-        console.log(`[Parse Response] ${term} fallback解析 - 正确性: ${termResult}`);
       }
     });
 
@@ -785,12 +825,12 @@ function parseGradingResponse(aiResponse, terms) {
     terms.forEach(term => {
       const termLower = term.toLowerCase();
       const responseLower = aiResponse.toLowerCase();
-      const isCorrect = responseLower.includes(termLower) && responseLower.includes('正确');
       results[term] = {
-        isCorrect: isCorrect,
-        correctAnswer: null
+        similarity: responseLower.includes(termLower) ? 0.5 : null,
+        standardAnswer: null,
+        explanation: null
       };
-      console.log(`[Parse Response] ${term} fallback结果 - 正确性: ${isCorrect}`);
+      console.log(`[Parse Response] ${term} fallback结果 - 相似度: ${results[term].similarity}`);
     });
 
     console.log(`[Parse Response] Fallback最终结果:`, results);
@@ -800,67 +840,114 @@ function parseGradingResponse(aiResponse, terms) {
 
 // Display grading results
 function displayGradingResults(results, totalCount) {
-  const correctCount = Object.values(results).filter(r => r.isCorrect).length;
+  const scoreValues = Object.values(results)
+    .map(r => (typeof r.similarity === 'number' ? r.similarity : null))
+    .filter(v => v !== null);
 
-  // Update score summary
+  const avgSimilarity = scoreValues.length
+    ? Math.round((scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length) * 100) / 100
+    : 0;
+
+  const highMatches = scoreValues.filter(v => v >= SIMILARITY_THRESHOLD_STRICT).length;
+  const mediumMatches = scoreValues.filter(v => v < SIMILARITY_THRESHOLD_STRICT && v >= SIMILARITY_THRESHOLD_PARTIAL).length;
+  const strictLabel = SIMILARITY_THRESHOLD_STRICT.toFixed(2);
+  const partialLabel = SIMILARITY_THRESHOLD_PARTIAL.toFixed(2);
+
   scoreSummaryEl.innerHTML = `
     <div>判题完成！</div>
-    <div style="margin-top: 8px; font-size: 20px;">
-      正确: <span style="color: var(--ok)">${correctCount}</span> /
-      总数: <span style="color: var(--text)">${totalCount}</span>
-      <span style="color: var(--accent); margin-left: 12px;">
-        (${Math.round(correctCount / totalCount * 100)}%)
-      </span>
+    <div class="score-line">
+      <span>平均相似度：<strong>${avgSimilarity.toFixed(2)}</strong></span>
+      <span>高匹配(≥${strictLabel}): <strong>${highMatches}</strong></span>
+      <span>中等匹配(≥${partialLabel}): <strong>${mediumMatches}</strong></span>
+      <span>总词数: <strong>${totalCount}</strong></span>
     </div>
   `;
 
-  // Update individual items
   Object.entries(results).forEach(([term, result]) => {
     const itemEl = document.querySelector(`[data-term="${term}"]`)?.closest('.item');
-    if (itemEl) {
-      itemEl.classList.remove('correct', 'incorrect');
-      itemEl.classList.add(result.isCorrect ? 'correct' : 'incorrect');
+    if (!itemEl) return;
 
-      // Add grade indicator
-      const termEl = itemEl.querySelector('.term');
-      let indicator = termEl.querySelector('.grade-indicator');
-      if (!indicator) {
-        indicator = document.createElement('span');
-        indicator.className = 'grade-indicator';
-        termEl.appendChild(indicator);
-      }
-      indicator.className = `grade-indicator ${result.isCorrect ? 'correct' : 'incorrect'}`;
-      indicator.textContent = result.isCorrect ? '✓' : '✗';
+    itemEl.classList.remove('correct', 'incorrect', 'partial');
 
-      // Add correct answer if available
-      let correctAnswerEl = itemEl.querySelector('.correct-answer');
-      if (result.correctAnswer) {
-        if (!correctAnswerEl) {
-          correctAnswerEl = document.createElement('div');
-          correctAnswerEl.className = 'correct-answer';
-          itemEl.appendChild(correctAnswerEl);
-        }
-        correctAnswerEl.innerHTML = `<strong>正确答案:</strong> ${result.correctAnswer}`;
-      } else if (correctAnswerEl) {
-        correctAnswerEl.remove();
+    const similarity = typeof result.similarity === 'number' ? result.similarity : null;
+    let bucket = 'incorrect';
+    if (similarity !== null) {
+      if (similarity >= SIMILARITY_THRESHOLD_STRICT) {
+        bucket = 'correct';
+      } else if (similarity >= SIMILARITY_THRESHOLD_PARTIAL) {
+        bucket = 'partial';
       }
+    }
+    itemEl.classList.add(bucket);
+
+    const termEl = itemEl.querySelector('.term');
+    if (!termEl) return;
+
+    let indicator = termEl.querySelector('.grade-indicator');
+    if (!indicator) {
+      indicator = document.createElement('span');
+      indicator.className = 'grade-indicator';
+      termEl.appendChild(indicator);
+    }
+    indicator.className = `grade-indicator ${bucket}`;
+    indicator.textContent = similarity !== null ? similarity.toFixed(2) : '—';
+    indicator.title = '语义相似度 (0-1)';
+
+    let detailsEl = itemEl.querySelector('.grading-details');
+    if (!detailsEl) {
+      detailsEl = document.createElement('div');
+      detailsEl.className = 'grading-details';
+      itemEl.appendChild(detailsEl);
+    }
+
+    detailsEl.innerHTML = '';
+
+    if (similarity !== null) {
+      const simRow = document.createElement('div');
+      const simLabel = document.createElement('strong');
+      simLabel.textContent = '相似度:';
+      simRow.appendChild(simLabel);
+      simRow.appendChild(document.createTextNode(' ' + similarity.toFixed(2)));
+      detailsEl.appendChild(simRow);
+    }
+
+    if (result.standardAnswer) {
+      const answerRow = document.createElement('div');
+      const answerLabel = document.createElement('strong');
+      answerLabel.textContent = '标准答案:';
+      answerRow.appendChild(answerLabel);
+      answerRow.appendChild(document.createTextNode(' ' + result.standardAnswer));
+      detailsEl.appendChild(answerRow);
+    }
+
+    if (result.explanation) {
+      const explainRow = document.createElement('div');
+      const explainLabel = document.createElement('strong');
+      explainLabel.textContent = '说明:';
+      explainRow.appendChild(explainLabel);
+      explainRow.appendChild(document.createTextNode(' ' + result.explanation));
+      detailsEl.appendChild(explainRow);
+    }
+
+    if (!detailsEl.hasChildNodes()) {
+      detailsEl.remove();
     }
   });
 
   aiResultsEl.style.display = 'block';
   aiConfigEl.style.display = 'none';
 
-  toast(`判题完成！正确率: ${Math.round(correctCount / totalCount * 100)}%`, 'ok');
+  toast(`判题完成！平均相似度 ${avgSimilarity.toFixed(2)}`, 'ok');
 }
 
 // Clear previous grading results
 function clearGradingResults() {
   document.querySelectorAll('.item').forEach(item => {
-    item.classList.remove('correct', 'incorrect');
+    item.classList.remove('correct', 'incorrect', 'partial');
     const indicator = item.querySelector('.grade-indicator');
     if (indicator) indicator.remove();
-    const correctAnswer = item.querySelector('.correct-answer');
-    if (correctAnswer) correctAnswer.remove();
+    const gradingDetails = item.querySelector('.grading-details');
+    if (gradingDetails) gradingDetails.remove();
   });
 }
 

@@ -530,9 +530,28 @@ button:hover, .btn:hover {
   border-radius: 8px;
 }
 
+.score-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.score-line strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .item.correct {
   border-color: var(--ok);
   background: rgba(133,153,0,.1);
+}
+
+.item.partial {
+  border-color: var(--highlight);
+  background: rgba(181,137,0,.12);
 }
 
 .item.incorrect {
@@ -553,9 +572,29 @@ button:hover, .btn:hover {
   color: white;
 }
 
+.item .grade-indicator.partial {
+  background: var(--highlight);
+  color: white;
+}
+
 .item .grade-indicator.incorrect {
   background: var(--warn);
   color: white;
+}
+
+.grading-details {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(88,110,117,.18);
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.grading-details strong {
+  font-weight: 700;
+  margin-right: 4px;
 }
 
 .ai-identity-btn {
@@ -568,16 +607,6 @@ button:hover, .btn:hover {
 
 .ai-identity-btn:hover {
   opacity: 0.9;
-}
-
-.correct-answer {
-  font-size: 13px;
-  color: var(--accent);
-  margin-top: 4px;
-  padding: 4px 8px;
-  background: rgba(38,139,210,.1);
-  border-radius: 6px;
-  border-left: 3px solid var(--accent);
 }
 
 .model-hint {
