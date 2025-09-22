@@ -18,11 +18,14 @@ const generatorWordsEl = document.getElementById('generator-words');
 const generatorTopicEl = document.getElementById('generator-topic');
 const generateArticleBtn = document.getElementById('generate-article-btn');
 const generatorStatusEl = document.getElementById('generator-status');
+const startGradeBtn = document.getElementById('start-grade');
 
 const DEFAULT_ARTICLE_WORD_GOAL = 220;
 const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
 const SIMILARITY_THRESHOLD_STRICT = 0.85;
 const SIMILARITY_THRESHOLD_PARTIAL = 0.6;
+
+let LAST_GRADING_RESULTS = {};
 
 // Build items
 function makeId(term){
@@ -98,6 +101,18 @@ function setGeneratorStatus(message, kind = 'info'){
   };
   generatorStatusEl.textContent = message || '';
   generatorStatusEl.style.color = palette[kind] || palette.info;
+}
+
+function setStartGradeButton(text, disabled){
+  if (!startGradeBtn) return;
+  if (typeof text === 'string') startGradeBtn.textContent = text;
+  if (typeof disabled === 'boolean') startGradeBtn.disabled = disabled;
+}
+
+function resetStartGradeButton(){
+  if (!startGradeBtn) return;
+  startGradeBtn.disabled = false;
+  startGradeBtn.textContent = startGradeBtn.dataset.originalText || '📝 开始判题';
 }
 
 function getSavedAIConfig(){
@@ -461,9 +476,12 @@ document.getElementById('clear').addEventListener('click', ()=>{
 document.getElementById('export').addEventListener('click', ()=>{
   const data = gather();
   // Create CSV with header
-  const rows = [["English","Chinese"]];
+  const rows = [["English","Chinese","Similarity"]];
   for (const term of VOCABS){
-    rows.push([term, (data[term] || '').replaceAll('\n',' ').trim()]);
+    const answer = (data[term] || '').replaceAll('\n',' ').trim();
+    const similarity = LAST_GRADING_RESULTS?.[term]?.similarity;
+    const similarityFormatted = typeof similarity === 'number' ? similarity.toFixed(2) : '';
+    rows.push([term, answer, similarityFormatted]);
   }
   const csv = toCSV(rows);
   // BOM for Excel UTF-8
@@ -566,24 +584,34 @@ document.getElementById('cancel-grade').addEventListener('click', () => {
   gradingInProgress = false;
 });
 
-document.getElementById('start-grade').addEventListener('click', async () => {
-  const apiUrl = document.getElementById('api-url').value.trim();
-  const apiKey = document.getElementById('api-key').value.trim();
-  const model = document.getElementById('ai-model').value.trim() || 'gpt-3.5-turbo';
+if (startGradeBtn) {
+  startGradeBtn.addEventListener('click', async () => {
+    const apiUrl = document.getElementById('api-url').value.trim();
+    const apiKey = document.getElementById('api-key').value.trim();
+    const model = document.getElementById('ai-model').value.trim() || 'gpt-3.5-turbo';
 
-  if (!apiUrl || !apiKey) {
-    aiConfigEl.style.display = 'block';
-    toast('请填写API地址和Key', 'warn');
-    return;
-  }
+    if (!apiUrl || !apiKey) {
+      aiConfigEl.style.display = 'block';
+      toast('请填写API地址和Key', 'warn');
+      return;
+    }
 
-  // Save API settings
-  localStorage.setItem('ai-api-url', apiUrl);
-  localStorage.setItem('ai-api-key', apiKey);
-  localStorage.setItem('ai-model', model);
+    // Save API settings
+    localStorage.setItem('ai-api-url', apiUrl);
+    localStorage.setItem('ai-api-key', apiKey);
+    localStorage.setItem('ai-model', model);
 
-  await startAIGrading(apiUrl, apiKey, model);
-});
+    const originalLabel = startGradeBtn.dataset.originalText || startGradeBtn.textContent;
+    startGradeBtn.dataset.originalText = originalLabel;
+    setStartGradeButton('判题准备中…', true);
+
+    try {
+      await startAIGrading(apiUrl, apiKey, model);
+    } finally {
+      setTimeout(resetStartGradeButton, 600);
+    }
+  });
+}
 
 // Main AI grading function
 async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
@@ -621,6 +649,9 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     }
 
     progressTextEl.textContent = `开始判题... (共${filledTerms.length}个词)`;
+    if (startGradeBtn) {
+      setStartGradeButton(`判题中 0/${filledTerms.length}`, true);
+    }
 
     // Process in batches of 20
     const batchSize = 20;
@@ -647,6 +678,10 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
         const progress = (totalProcessed / filledTerms.length) * 100;
         progressFillEl.style.width = progress + '%';
         console.log(`[Main Grading] 进度: ${progress}% (${totalProcessed}/${filledTerms.length})`);
+        if (startGradeBtn) {
+          const percentLabel = Math.round(progress);
+          setStartGradeButton(`判题中 ${totalProcessed}/${filledTerms.length} (${percentLabel}%)`, true);
+        }
 
         // Small delay between batches to avoid rate limiting
         if (i < batches.length - 1) {
@@ -662,10 +697,14 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     console.log('[Main Grading] 所有批次处理完成，最终结果:', results);
     // Display results
     displayGradingResults(results, filledTerms.length);
+    if (startGradeBtn) {
+      setStartGradeButton('判题完成 ✓', true);
+    }
 
   } catch (error) {
     console.error('[Main Grading] 判题过程错误:', error);
     toast('判题过程中出现错误: ' + error.message, 'warn');
+    if (startGradeBtn) setStartGradeButton('判题失败', true);
   } finally {
     gradingInProgress = false;
     aiProgressEl.style.display = 'none';
@@ -840,6 +879,7 @@ function parseGradingResponse(aiResponse, terms) {
 
 // Display grading results
 function displayGradingResults(results, totalCount) {
+  LAST_GRADING_RESULTS = results || {};
   const scoreValues = Object.values(results)
     .map(r => (typeof r.similarity === 'number' ? r.similarity : null))
     .filter(v => v !== null);
@@ -942,6 +982,7 @@ function displayGradingResults(results, totalCount) {
 
 // Clear previous grading results
 function clearGradingResults() {
+  LAST_GRADING_RESULTS = {};
   document.querySelectorAll('.item').forEach(item => {
     item.classList.remove('correct', 'incorrect', 'partial');
     const indicator = item.querySelector('.grade-indicator');
