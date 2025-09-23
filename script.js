@@ -15,7 +15,6 @@ const saveArticleBtn = document.getElementById('save-article-btn');
 const editorStatus = document.getElementById('editor-status');
 const articleContent = document.getElementById('article-content');
 const generatorWordsEl = document.getElementById('generator-words');
-const generatorTopicEl = document.getElementById('generator-topic');
 const generateArticleBtn = document.getElementById('generate-article-btn');
 const generatorStatusEl = document.getElementById('generator-status');
 const startGradeBtn = document.getElementById('start-grade');
@@ -303,12 +302,20 @@ function getSavedAIConfig(){
   return { apiUrl, apiKey, model };
 }
 
-function createArticlePrompt(words, topic){
+function shuffleWords(list){
+  const arr = [...list];
+  for (let i = arr.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function createArticlePrompt(words){
   const wordGoal = DEFAULT_ARTICLE_WORD_GOAL;
   const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
-  const topicLine = topic ? `主题提示：${topic}\n\n` : '';
-  return `${topicLine}请写一篇面向地学学习者的英文短文，使用Markdown段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落。\n- 下列每个词必须至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 内容要自然流畅，信息准确，可适当加入背景、例子或解释。\n\n目标词汇：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
+  return `请写一篇面向英语学习者的英文短文，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落，总字数约 ${wordGoal} 词。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n目标词汇（顺序随机）：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
 }
 
 async function handleGenerateArticle(){
@@ -320,7 +327,6 @@ async function handleGenerateArticle(){
     return;
   }
 
-  const topic = (generatorTopicEl?.value || '').trim();
   const { apiUrl, apiKey, model } = getSavedAIConfig();
 
   if (!apiUrl || !apiKey){
@@ -336,7 +342,8 @@ async function handleGenerateArticle(){
     generateArticleBtn.textContent = '生成中…';
     setGeneratorStatus('正在请求AI生成文章…', 'info');
 
-    const prompt = createArticlePrompt(words, topic);
+    const shuffledWords = shuffleWords(words);
+    const prompt = createArticlePrompt(shuffledWords);
     const body = {
       model,
       messages: [
