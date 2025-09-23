@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>词汇掌握情况 · 阅读学单词</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="progress-page">
+  <header>
+    <div class="wrap">
+      <div class="progress-header">
+        <div>
+          <h1>词汇掌握情况</h1>
+          <p class="hint">查看全部词汇的分数、练习次数与最后练习时间，可手动标记“已掌握”或“重置未练习”。</p>
+        </div>
+        <div class="progress-actions">
+          <a class="nav-link" href="geo_vocab_fill_in_webpage_english→chinese.html">返回阅读学单词</a>
+          <button id="refresh-progress" class="sync-btn">🔄 刷新数据</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="progress-main">
+    <div class="wrap">
+      <div class="progress-controls">
+        <input id="progress-search" type="search" placeholder="搜索词汇…" />
+        <label>
+          分数上限
+          <input id="score-filter" type="number" step="0.1" placeholder="例如 1.0" />
+        </label>
+        <label>
+          状态筛选
+          <select id="status-filter">
+            <option value="all">全部</option>
+            <option value="fresh">未练习</option>
+            <option value="mastered">已掌握</option>
+            <option value="learning">学习中</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="progress-status" class="sync-status"></div>
+
+      <div class="progress-table">
+        <table>
+          <thead>
+            <tr>
+              <th>词汇</th>
+              <th>分数</th>
+              <th>练习次数</th>
+              <th>最后练习时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="progress-body">
+            <tr><td class="empty" colspan="5">正在加载词汇数据…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="progress.js"></script>
+</body>
+</html>

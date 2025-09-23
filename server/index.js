@@ -294,6 +294,45 @@ async function handlePostScores(req, res) {
   }
 }
 
+async function handleWordStatus(req, res) {
+  try {
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks).toString('utf-8');
+    const payload = JSON.parse(raw || '{}');
+    const term = typeof payload.term === 'string' ? payload.term.trim() : '';
+    const action = payload.action;
+    if (!term) {
+      return sendJson(res, 400, { error: '缺少词汇名称' });
+    }
+    if (action !== 'mastered' && action !== 'reset') {
+      return sendJson(res, 400, { error: '未知操作类型' });
+    }
+
+    const escaped = term.replace(/'/g, "''");
+    const statements = ['BEGIN TRANSACTION;'];
+    statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${escaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`);
+
+    if (action === 'mastered') {
+      const timestamp = new Date().toISOString();
+      statements.push(`UPDATE word_scores SET score = 999, submissions = submissions + 1, last_submission = '${timestamp}' WHERE term = '${escaped}';`);
+    } else if (action === 'reset') {
+      statements.push(`UPDATE word_scores SET score = 0, submissions = 0, last_submission = NULL WHERE term = '${escaped}';`);
+    }
+
+    statements.push('COMMIT;');
+    await runSqlite(statements.join('\n'));
+
+    const [result] = await getScoresForTerms([term]);
+    return sendJson(res, 200, { term, action, record: result || null });
+  } catch (error) {
+    console.error('Failed to update word status', error);
+    return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+  }
+}
+
 async function requestListener(req, res) {
   const { pathname } = url.parse(req.url, true);
 
@@ -336,6 +375,10 @@ async function requestListener(req, res) {
       console.error('Failed to fetch word suggestions', error);
       return sendJson(res, 500, { error: error.message || '服务器内部错误' });
     }
+  }
+
+  if (pathname === '/api/word-status' && req.method === 'POST') {
+    return handleWordStatus(req, res);
   }
 
   if (pathname === '/health') {
