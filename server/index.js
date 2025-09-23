@@ -159,8 +159,11 @@ async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThre
   if (!takeTotal) return result;
 
   if (takePracticed > 0) {
+    const thresholdQuery = Number.isFinite(masteryThreshold)
+      ? `AND score < ${masteryThreshold}`
+      : '';
     const sql = `SELECT term, score FROM word_scores
-      WHERE submissions > 0 AND score < ${masteryThreshold}
+      WHERE submissions > 0 ${thresholdQuery}
       ORDER BY score ASC, submissions ASC, rowid ASC
       LIMIT ${takePracticed};`;
     const raw = await runSqlite(sql, { json: true });
@@ -169,9 +172,30 @@ async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThre
     } catch (error) {
       console.error('Failed to parse practiced suggestion:', error.message);
     }
+
+    const fallbackRemaining = Math.max(0, takePracticed - result.practiced.length);
+    if (fallbackRemaining > 0) {
+      const excludeList = (result.practiced || [])
+        .map(entry => entry && typeof entry.term === 'string' ? entry.term : null)
+        .filter(Boolean)
+        .map(term => `'${term.replace(/'/g, "''")}'`)
+        .join(',');
+      const exclusionClause = excludeList ? `AND term NOT IN (${excludeList})` : '';
+      const fallbackSql = `SELECT term, score FROM word_scores
+        WHERE submissions > 0 AND score >= 0 ${exclusionClause}
+        ORDER BY score ASC, submissions ASC, rowid ASC
+        LIMIT ${fallbackRemaining};`;
+      const fallbackRaw = await runSqlite(fallbackSql, { json: true });
+      try {
+        const fallback = fallbackRaw ? JSON.parse(fallbackRaw) : [];
+        result.practiced = [...(result.practiced || []), ...fallback];
+      } catch (error) {
+        console.error('Failed to parse practiced fallback suggestion:', error.message);
+      }
+    }
   }
 
-  const remaining = Math.max(0, takeTotal - result.practiced.length);
+  const remaining = Math.max(0, takeTotal - (result.practiced?.length || 0));
   if (remaining > 0) {
     const sql = `SELECT term, score FROM word_scores
       WHERE submissions = 0
