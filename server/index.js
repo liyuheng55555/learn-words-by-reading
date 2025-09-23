@@ -119,6 +119,34 @@ async function applyScores(results) {
   await runSqlite(statements.join('\n'));
 }
 
+async function getScoresForTerms(terms) {
+  if (!terms || !terms.length) return [];
+  const uniqueTerms = [];
+  const seen = new Set();
+  for (const term of terms) {
+    if (!term || typeof term !== 'string') continue;
+    const trimmed = term.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    uniqueTerms.push(trimmed);
+  }
+  if (!uniqueTerms.length) return [];
+
+  const escapedList = uniqueTerms.map(term => `'${term.replace(/'/g, "''")}'`).join(',');
+  const sql = `SELECT term, score, submissions, last_submission FROM word_scores WHERE term IN (${escapedList});`;
+  let parsed = [];
+  const raw = await runSqlite(sql, { json: true });
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      console.error('Failed to parse targeted score query:', error.message);
+    }
+  }
+  const map = new Map(parsed.map(item => [item.term, item]));
+  return uniqueTerms.map(term => map.get(term)).filter(Boolean);
+}
+
 async function getSuggestedTerms(lowLimit = 0, newLimit = 0) {
   const statements = [];
   if (lowLimit > 0) {
@@ -253,8 +281,12 @@ async function handlePostScores(req, res) {
     }
 
     await applyScores(results);
-    const scores = await getScores();
-    return sendJson(res, 200, { updated: results.length, scores });
+    const submittedTerms = results
+      .filter(item => item && typeof item.term === 'string')
+      .map(item => item.term.trim())
+      .filter(Boolean);
+    const scores = await getScoresForTerms(submittedTerms);
+    return sendJson(res, 200, { updated: submittedTerms.length, scores });
   } catch (error) {
     console.error('Failed to process POST /api/word-scores', error);
     return sendJson(res, 500, { error: error.message || '服务器内部错误' });

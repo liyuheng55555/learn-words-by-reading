@@ -779,7 +779,7 @@ document.getElementById('ai-grade').addEventListener('click', async () => {
       scoreApiUrlInput.value = savedScoreApi || scoreApiUrlInput.value || 'http://localhost:4000';
     }
     renderServerScores([]);
-    fetchServerScores({ quiet: true });
+    setSyncStatus('同步后将显示本次提交的词汇成绩', 'info');
   } else {
     aiConfigEl.style.display = 'none';
   }
