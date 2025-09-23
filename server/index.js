@@ -119,6 +119,42 @@ async function applyScores(results) {
   await runSqlite(statements.join('\n'));
 }
 
+async function getSuggestedTerms(lowLimit = 0, newLimit = 0) {
+  const statements = [];
+  if (lowLimit > 0) {
+    statements.push(`SELECT term, score FROM word_scores WHERE submissions > 0 ORDER BY score ASC, submissions ASC, rowid ASC LIMIT ${lowLimit};`);
+  }
+  if (newLimit > 0) {
+    statements.push(`SELECT term, score FROM word_scores WHERE submissions = 0 ORDER BY rowid ASC LIMIT ${newLimit};`);
+  }
+
+  const results = { low: [], fresh: [] };
+
+  if (!statements.length) return results;
+
+  if (lowLimit > 0) {
+    const lowSql = `SELECT term, score FROM word_scores WHERE submissions > 0 ORDER BY score ASC, submissions ASC, rowid ASC LIMIT ${lowLimit};`;
+    const raw = await runSqlite(lowSql, { json: true });
+    try {
+      results.low = raw ? JSON.parse(raw) : [];
+    } catch (error) {
+      console.error('Failed to parse low-score suggestion:', error.message);
+    }
+  }
+
+  if (newLimit > 0) {
+    const newSql = `SELECT term, score FROM word_scores WHERE submissions = 0 ORDER BY rowid ASC LIMIT ${newLimit};`;
+    const rawNew = await runSqlite(newSql, { json: true });
+    try {
+      results.fresh = rawNew ? JSON.parse(rawNew) : [];
+    } catch (error) {
+      console.error('Failed to parse new-term suggestion:', error.message);
+    }
+  }
+
+  return results;
+}
+
 async function ensureTableColumns() {
   const infoRaw = await runSqlite('PRAGMA table_info(word_scores);', { json: true });
   let columns = [];
@@ -249,6 +285,22 @@ async function requestListener(req, res) {
 
   if (pathname === '/api/word-scores' && req.method === 'POST') {
     return handlePostScores(req, res);
+  }
+
+  if (pathname === '/api/word-suggestions' && req.method === 'GET') {
+    try {
+      const { query } = url.parse(req.url, true);
+      const lowLimit = Math.max(0, Math.min(50, Number(query.low) || 0));
+      const newLimit = Math.max(0, Math.min(50, Number(query.fresh) || Number(query.new) || 0));
+      const data = await getSuggestedTerms(lowLimit, newLimit);
+      return sendJson(res, 200, {
+        low: Array.isArray(data.low) ? data.low : [],
+        fresh: Array.isArray(data.fresh) ? data.fresh : []
+      });
+    } catch (error) {
+      console.error('Failed to fetch word suggestions', error);
+      return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+    }
   }
 
   if (pathname === '/health') {

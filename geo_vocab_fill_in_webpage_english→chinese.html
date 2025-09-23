@@ -66,6 +66,13 @@
               <label class="generator-label" for="generator-topic">可选主题</label>
               <input id="generator-topic" type="text" placeholder="例如：火山活动对地貌的影响" />
             </div>
+            <div class="generator-row">
+              <label class="generator-label" for="low-score-count">低分词数</label>
+              <input id="low-score-count" type="number" min="0" max="20" value="3" />
+              <label class="generator-label" for="fresh-word-count">新词数量</label>
+              <input id="fresh-word-count" type="number" min="0" max="20" value="2" />
+              <button id="auto-fill-words" class="auto-select-btn">🎯 自动取词</button>
+            </div>
             <div class="generator-actions">
               <button id="generate-article-btn" class="ai-btn">✨ AI生成文章</button>
             </div>

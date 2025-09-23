@@ -23,6 +23,9 @@ const syncServerBtn = document.getElementById('sync-server');
 const syncStatusEl = document.getElementById('sync-status');
 const serverScoresEl = document.getElementById('server-scores');
 const scoreApiUrlInput = document.getElementById('score-api-url');
+const lowScoreCountInput = document.getElementById('low-score-count');
+const freshWordCountInput = document.getElementById('fresh-word-count');
+const autoFillWordsBtn = document.getElementById('auto-fill-words');
 
 if (syncServerBtn && !syncServerBtn.dataset.originalText) {
   syncServerBtn.dataset.originalText = syncServerBtn.textContent;
@@ -193,6 +196,14 @@ function collectSimilarityPayload(){
   return results;
 }
 
+function collectSuggestionCounts(){
+  const lowRaw = Number(lowScoreCountInput?.value ?? 0);
+  const freshRaw = Number(freshWordCountInput?.value ?? 0);
+  const low = Number.isFinite(lowRaw) ? Math.max(0, Math.min(50, Math.round(lowRaw))) : 0;
+  const fresh = Number.isFinite(freshRaw) ? Math.max(0, Math.min(50, Math.round(freshRaw))) : 0;
+  return { low, fresh };
+}
+
 async function fetchServerScores({ quiet = false } = {}) {
   try {
     const base = getScoreApiBase();
@@ -220,6 +231,57 @@ async function fetchServerScores({ quiet = false } = {}) {
     if (!quiet) {
       setSyncStatus(`无法获取服务器分数：${error.message}`, 'warn');
     }
+  }
+}
+
+async function handleAutoFillWords(){
+  if (!autoFillWordsBtn) return;
+  const { low, fresh } = collectSuggestionCounts();
+  if (!low && !fresh){
+    setGeneratorStatus('请至少指定低分词或新词数量', 'warn');
+    return;
+  }
+
+  const base = getScoreApiBase();
+  const endpoint = `${base.replace(/\/$/, '')}/api/word-suggestions?low=${low}&fresh=${fresh}`;
+
+  autoFillWordsBtn.disabled = true;
+  autoFillWordsBtn.textContent = '获取中…';
+  setGeneratorStatus('正在向服务器请求推荐词汇…', 'info');
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
+    }
+    const data = await response.json();
+    const lowWords = Array.isArray(data.low) ? data.low.map(entry => entry.term).filter(Boolean) : [];
+    const freshWords = Array.isArray(data.fresh) ? data.fresh.map(entry => entry.term).filter(Boolean) : [];
+
+    if (!lowWords.length && !freshWords.length) {
+      setGeneratorStatus('服务器未返回可用词汇，请稍后重试。', 'warn');
+      return;
+    }
+
+    const segments = [];
+    if (lowWords.length) segments.push(lowWords.join(', '));
+    if (freshWords.length) segments.push(freshWords.join(', '));
+
+    generatorWordsEl.value = segments.join('\n\n');
+    setGeneratorStatus(`已填入 ${lowWords.length} 个低分词与 ${freshWords.length} 个新词`, 'ok');
+    localStorage.setItem('score-api-url', base);
+  } catch (error) {
+    console.error('[Auto Fill Words] 获取失败:', error);
+    setGeneratorStatus(`获取推荐词汇失败：${error.message}`, 'warn');
+  } finally {
+    autoFillWordsBtn.disabled = false;
+    autoFillWordsBtn.textContent = '🎯 自动取词';
   }
 }
 
@@ -430,6 +492,13 @@ saveArticleBtn.addEventListener('click', () => {
 
 if (generateArticleBtn){
   generateArticleBtn.addEventListener('click', handleGenerateArticle);
+}
+
+if (autoFillWordsBtn){
+  autoFillWordsBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleAutoFillWords();
+  });
 }
 
 if (syncServerBtn){

@@ -232,6 +232,29 @@ main {
   font-size: 14px;
 }
 
+.generator-row input[type="number"] {
+  flex: 0 0 90px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(38,139,210,.3);
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.auto-select-btn {
+  flex: 0 0 auto;
+  background: linear-gradient(45deg, #f97316, #facc15) !important;
+  color: #231815 !important;
+  border: none !important;
+  padding: 8px 14px !important;
+  font-weight: 700 !important;
+}
+
+.auto-select-btn:hover {
+  opacity: 0.9;
+}
+
 .generator-actions {
   margin-top: 16px;
   display: flex;
