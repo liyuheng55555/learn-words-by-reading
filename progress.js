@@ -113,11 +113,13 @@ function renderTable(records) {
     const score = Number(record.score) || 0;
     const submissions = Number(record.submissions) || 0;
     const lastSubmission = record.last_submission;
+    const order = Number(record._order);
 
     const masteredClass = score >= 999 ? 'status-mastered' : (submissions === 0 ? 'status-fresh' : '');
 
     return `
       <tr class="${masteredClass}">
+        <td>${Number.isFinite(order) ? order + 1 : ''}</td>
         <td>${escapeHtml(term)}</td>
         <td>${formatScore(score)}</td>
         <td>${submissions}</td>
