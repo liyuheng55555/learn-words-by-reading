@@ -1,6 +1,8 @@
 // --- Vocabulary source list (unique, in requested order) ---
 // This will be dynamically populated based on uploaded article
 let VOCABS = [];
+const VARIANT_TO_ORIGINAL = new Map();
+const ORIGINAL_TO_VARIANT = new Map();
 
 const listEl = document.getElementById('list');
 const filterEl = document.getElementById('filter');
@@ -46,15 +48,49 @@ function makeId(term){
   return 'term-' + term.toLowerCase().replace(/[^a-z0-9]+/g,'-');
 }
 
+function registerVariantMapping(original, used) {
+  const originalTrim = typeof original === 'string' ? original.trim() : '';
+  if (!originalTrim) return;
+  const usedTrim = typeof used === 'string' && used.trim() ? used.trim() : originalTrim;
+  VARIANT_TO_ORIGINAL.set(usedTrim.toLowerCase(), originalTrim);
+  VARIANT_TO_ORIGINAL.set(originalTrim.toLowerCase(), originalTrim);
+  ORIGINAL_TO_VARIANT.set(originalTrim, usedTrim);
+}
+
+function resetVariantMappings(pairs = []) {
+  VARIANT_TO_ORIGINAL.clear();
+  ORIGINAL_TO_VARIANT.clear();
+  if (!Array.isArray(pairs)) return;
+  for (const entry of pairs) {
+    if (!entry || typeof entry !== 'object') continue;
+    registerVariantMapping(entry.original, entry.used);
+  }
+}
+
+function getOriginalFromVariant(variant) {
+  if (!variant) return null;
+  const key = variant.trim().toLowerCase();
+  if (VARIANT_TO_ORIGINAL.has(key)) return VARIANT_TO_ORIGINAL.get(key);
+  const fallback = VOCABS.find(term => term.toLowerCase() === key);
+  return fallback || null;
+}
+
+function getVariantForOriginal(original) {
+  if (!original) return null;
+  const originalTrim = original.trim();
+  return ORIGINAL_TO_VARIANT.get(originalTrim) || originalTrim;
+}
+
 function jumpTo(term){
-  // Try by dedicated anchor id first
-  const byId = document.getElementById('t-' + term.toLowerCase().replace(/[^a-z0-9]+/g,'-'));
+  const variant = getVariantForOriginal(term) || term;
+  const anchorId = 't-' + variant.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+  const byId = document.getElementById(anchorId);
   if (byId) { byId.scrollIntoView({behavior:'smooth', block:'center'}); highlight(byId); return; }
-  // Fallback: search first <strong> whose text includes the term case-insensitively
   const strongs = document.querySelectorAll('#article-content strong');
-  const termLower = term.toLowerCase();
+  const targetLower = variant.toLowerCase();
   for (const s of strongs){
-    if (s.textContent.toLowerCase().includes(termLower)) { s.scrollIntoView({behavior:'smooth', block:'center'}); highlight(s); return; }
+    const text = s.textContent.trim().toLowerCase();
+    if (text === targetLower || text.includes(targetLower)) { s.scrollIntoView({behavior:'smooth', block:'center'}); highlight(s); return; }
   }
   alert('在文章中未找到该词：' + term);
 }
@@ -93,10 +129,34 @@ function makeTermRegex(term){
   return new RegExp(`\\b${escaped}\\b`, 'i');
 }
 
-function findMissingTerms(content, words){
+function findMissingTerms(content, words, variantPairs = []){
   const text = content.replace(/\*\*/g, '');
+  const usedVariants = new Set();
+  const variantRegex = /\*\*(.*?)\*\*/g;
+  let match;
+  while ((match = variantRegex.exec(content)) !== null) {
+    const used = match[1]?.trim().toLowerCase();
+    if (used) usedVariants.add(used);
+  }
+
+  const variantMap = new Map();
+  if (Array.isArray(variantPairs)) {
+    for (const entry of variantPairs) {
+      if (!entry || typeof entry !== 'object') continue;
+      const original = typeof entry.original === 'string' ? entry.original.trim().toLowerCase() : '';
+      const used = typeof entry.used === 'string' ? entry.used.trim().toLowerCase() : '';
+      if (original && used) variantMap.set(original, used);
+      if (original && !used) variantMap.set(original, original);
+    }
+  }
+
   const missing = [];
   for (const word of words){
+    const originalLower = typeof word === 'string' ? word.trim().toLowerCase() : '';
+    if (!originalLower) continue;
+    if (usedVariants.has(originalLower)) continue;
+    const mappedVariant = variantMap.get(originalLower);
+    if (mappedVariant && usedVariants.has(mappedVariant)) continue;
     const regex = makeTermRegex(word);
     if (!regex) continue;
     if (!regex.test(text)){
@@ -315,7 +375,43 @@ function createArticlePrompt(words){
   const wordGoal = DEFAULT_ARTICLE_WORD_GOAL;
   const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
-  return `请写一篇面向英语学习者的英文短文，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落，总字数约 ${wordGoal} 词。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n目标词汇（顺序随机）：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
+  return `请输出一个 JSON 对象，字段如下：\n{\n  "article": "段落使用\\n分隔的英文文章，需使用Markdown粗体 **word** 标注词汇",\n  "variants": [\n    {"original": "原始词汇（与下方列表一致）", "used": "文章中实际出现的词汇形式（不含**，保留大小写/时态变化）"}\n  ]\n}\n\n写作要求：\n- 面向英语学习者，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。\n- 将文章正文放在 JSON 的 article 字段中，换行使用\\n 表示，正文中每个词至少出现一次并使用 **word** 标注。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次。\n- 如需改变大小写、时态或语态，请在 variants 列表中标明 original 与 used 的对应关系；若词形未变化，也需提供 used=original。\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n目标词汇（顺序随机）：\n${bulletList}`;
+}
+
+function parseGeneratedArticleResponse(aiContent){
+  if (!aiContent) {
+    throw new Error('AI未返回文章内容');
+  }
+  let jsonText = aiContent.trim();
+  const fencedMatch = jsonText.match(/```(?:json)?([\s\S]*?)```/i);
+  if (fencedMatch) {
+    jsonText = fencedMatch[1].trim();
+  } else {
+    const looseMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (looseMatch) {
+      jsonText = looseMatch[0];
+    }
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (error) {
+    console.error('[Article Generator] JSON解析失败:', error, '\n原始内容:', aiContent);
+    throw new Error('AI未返回有效的JSON结构');
+  }
+  const article = typeof parsed.article === 'string' ? parsed.article.trim() : '';
+  if (!article) {
+    throw new Error('JSON 中缺少 article 字段');
+  }
+  const variantsRaw = Array.isArray(parsed.variants) ? parsed.variants : [];
+  const variants = variantsRaw.map(entry => {
+    if (!entry || typeof entry !== 'object') return null;
+    const original = typeof entry.original === 'string' ? entry.original.trim() : '';
+    const used = typeof entry.used === 'string' ? entry.used.trim() : '';
+    if (!original) return null;
+    return { original, used: used || original };
+  }).filter(Boolean);
+  return { article, variants };
 }
 
 async function handleGenerateArticle(){
@@ -373,21 +469,20 @@ async function handleGenerateArticle(){
     }
 
     const result = await response.json();
-    const content = result?.choices?.[0]?.message?.content?.trim();
-    if (!content){
-      throw new Error('AI未返回文章内容');
-    }
+    const aiContent = result?.choices?.[0]?.message?.content?.trim();
+    const { article, variants } = parseGeneratedArticleResponse(aiContent);
+    console.log('[Article Generator] 解析后的变形映射:', variants);
 
-    articleEditor.value = content;
-    processArticleContent(content);
+    articleEditor.value = article;
+    processArticleContent(article, variants);
     switchToViewMode();
-    const missingTerms = findMissingTerms(content, words);
+    const missingTerms = findMissingTerms(article, words, variants);
     if (missingTerms.length){
       const message = `⚠️ 已生成文章，但缺少 ${missingTerms.length} 个词：${missingTerms.join('，')}`;
       setGeneratorStatus(message, 'warn');
       toast('生成完成，但存在缺失词汇，请手动补充。', 'warn');
     } else {
-      setGeneratorStatus('AI文章生成完成，所有目标词汇均已覆盖 ✓', 'ok');
+      setGeneratorStatus('AI文章生成完成，词汇与词形均已覆盖 ✓', 'ok');
       toast('文章生成成功并包含全部目标词汇！', 'ok');
     }
   } catch (error) {
@@ -401,8 +496,9 @@ async function handleGenerateArticle(){
 
 
 // Process article content and extract vocabulary
-function processArticleContent(content) {
+function processArticleContent(content, variantPairs = []) {
   try {
+    resetVariantMappings(variantPairs);
     // Convert **markdown** to <strong> HTML tags and preserve paragraph structure
     const formattedContent = convertMarkdownToHtml(content);
 
@@ -443,26 +539,21 @@ function convertMarkdownToHtml(content) {
 function extractVocabulary(content) {
   // Find all words enclosed in **
   const regex = /\*\*(.*?)\*\*/g;
-  const matches = content.match(regex);
-
-  if (matches) {
-    // Use an array to preserve order and a set to track duplicates
-    const vocabList = [];
-    const vocabSet = new Set();
-    matches.forEach(match => {
-      // Remove ** and trim whitespace
-      const word = match.replace(/\*\*/g, '').trim();
-      if (word && !vocabSet.has(word)) {
-        vocabSet.add(word);
-        vocabList.push(word);
-      }
-    });
-
-    // Assign ordered list to VOCABS
-    VOCABS = vocabList;
-  } else {
-    VOCABS = [];
+  const vocabList = [];
+  const vocabSet = new Set();
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const used = match[1]?.trim();
+    if (!used) continue;
+    const original = getOriginalFromVariant(used) || used;
+    registerVariantMapping(original, used);
+    if (!vocabSet.has(original)) {
+      vocabSet.add(original);
+      vocabList.push(original);
+    }
   }
+
+  VOCABS = vocabList;
 }
 
 // Function to find term by id fragment
@@ -629,10 +720,10 @@ listEl.addEventListener('focus', (e)=>{
 // Add click handler for article words to jump to corresponding input
 document.getElementById('article-content').addEventListener('click', (e)=>{
   if (e.target.tagName === 'STRONG') {
-    // Extract term from text content
-    const term = e.target.textContent.trim();
-    if (term && VOCABS.includes(term)) {
-      jumpToInput(term);
+    const variant = e.target.textContent.trim();
+    const originalTerm = getOriginalFromVariant(variant);
+    if (originalTerm && VOCABS.includes(originalTerm)) {
+      jumpToInput(originalTerm);
     }
   }
 });
