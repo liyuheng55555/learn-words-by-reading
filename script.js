@@ -23,8 +23,9 @@ const syncServerBtn = document.getElementById('sync-server');
 const syncStatusEl = document.getElementById('sync-status');
 const serverScoresEl = document.getElementById('server-scores');
 const scoreApiUrlInput = document.getElementById('score-api-url');
-const lowScoreCountInput = document.getElementById('low-score-count');
-const freshWordCountInput = document.getElementById('fresh-word-count');
+const practicedCountInput = document.getElementById('practiced-count');
+const totalCountInput = document.getElementById('total-count');
+const masteryThresholdInput = document.getElementById('mastery-threshold');
 const autoFillWordsBtn = document.getElementById('auto-fill-words');
 
 if (syncServerBtn && !syncServerBtn.dataset.originalText) {
@@ -197,11 +198,13 @@ function collectSimilarityPayload(){
 }
 
 function collectSuggestionCounts(){
-  const lowRaw = Number(lowScoreCountInput?.value ?? 0);
-  const freshRaw = Number(freshWordCountInput?.value ?? 0);
-  const low = Number.isFinite(lowRaw) ? Math.max(0, Math.min(50, Math.round(lowRaw))) : 0;
-  const fresh = Number.isFinite(freshRaw) ? Math.max(0, Math.min(50, Math.round(freshRaw))) : 0;
-  return { low, fresh };
+  const practicedRaw = Number(practicedCountInput?.value ?? 0);
+  const totalRaw = Number(totalCountInput?.value ?? 0);
+  const thresholdRaw = Number(masteryThresholdInput?.value ?? 1);
+  const practiced = Number.isFinite(practicedRaw) ? Math.max(0, Math.min(50, Math.round(practicedRaw))) : 0;
+  const total = Number.isFinite(totalRaw) ? Math.max(0, Math.min(50, Math.round(totalRaw))) : 0;
+  const masteryThreshold = Number.isFinite(thresholdRaw) ? thresholdRaw : 1;
+  return { practiced, total, masteryThreshold };
 }
 
 async function fetchServerScores({ quiet = false } = {}) {
@@ -236,14 +239,19 @@ async function fetchServerScores({ quiet = false } = {}) {
 
 async function handleAutoFillWords(){
   if (!autoFillWordsBtn) return;
-  const { low, fresh } = collectSuggestionCounts();
-  if (!low && !fresh){
-    setGeneratorStatus('请至少指定低分词或新词数量', 'warn');
+  const { practiced, total, masteryThreshold } = collectSuggestionCounts();
+  if (!total){
+    setGeneratorStatus('请设置总词数（至少 1）', 'warn');
+    return;
+  }
+
+  if (practiced > total){
+    setGeneratorStatus('练习过的词数不能超过总词数', 'warn');
     return;
   }
 
   const base = getScoreApiBase();
-  const endpoint = `${base.replace(/\/$/, '')}/api/word-suggestions?low=${low}&fresh=${fresh}`;
+  const endpoint = `${base.replace(/\/$/, '')}/api/word-suggestions?practiced=${practiced}&total=${total}&threshold=${encodeURIComponent(masteryThreshold)}`;
 
   autoFillWordsBtn.disabled = true;
   autoFillWordsBtn.textContent = '获取中…';
@@ -261,20 +269,20 @@ async function handleAutoFillWords(){
       throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
     }
     const data = await response.json();
-    const lowWords = Array.isArray(data.low) ? data.low.map(entry => entry.term).filter(Boolean) : [];
+    const practicedWords = Array.isArray(data.practiced) ? data.practiced.map(entry => entry.term).filter(Boolean) : [];
     const freshWords = Array.isArray(data.fresh) ? data.fresh.map(entry => entry.term).filter(Boolean) : [];
 
-    if (!lowWords.length && !freshWords.length) {
-      setGeneratorStatus('服务器未返回可用词汇，请稍后重试。', 'warn');
+    if (!practicedWords.length && !freshWords.length) {
+      setGeneratorStatus('未获取到符合条件的词汇，请调整参数。', 'warn');
       return;
     }
 
     const segments = [];
-    if (lowWords.length) segments.push(lowWords.join(', '));
+    if (practicedWords.length) segments.push(practicedWords.join(', '));
     if (freshWords.length) segments.push(freshWords.join(', '));
 
     generatorWordsEl.value = segments.join('\n\n');
-    setGeneratorStatus(`已填入 ${lowWords.length} 个低分词与 ${freshWords.length} 个新词`, 'ok');
+    setGeneratorStatus(`已填入 ${practicedWords.length} 个练习词与 ${freshWords.length} 个新词`, 'ok');
     localStorage.setItem('score-api-url', base);
   } catch (error) {
     console.error('[Auto Fill Words] 获取失败:', error);

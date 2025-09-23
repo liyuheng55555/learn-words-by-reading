@@ -147,40 +147,41 @@ async function getScoresForTerms(terms) {
   return uniqueTerms.map(term => map.get(term)).filter(Boolean);
 }
 
-async function getSuggestedTerms(lowLimit = 0, newLimit = 0) {
-  const statements = [];
-  if (lowLimit > 0) {
-    statements.push(`SELECT term, score FROM word_scores WHERE submissions > 0 ORDER BY score ASC, submissions ASC, rowid ASC LIMIT ${lowLimit};`);
-  }
-  if (newLimit > 0) {
-    statements.push(`SELECT term, score FROM word_scores WHERE submissions = 0 ORDER BY rowid ASC LIMIT ${newLimit};`);
-  }
+async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThreshold = 1) {
+  const takePracticed = Math.max(0, Math.min(practicedCount, totalCount));
+  const takeTotal = Math.max(0, totalCount);
 
-  const results = { low: [], fresh: [] };
+  const result = { practiced: [], fresh: [] };
+  if (!takeTotal) return result;
 
-  if (!statements.length) return results;
-
-  if (lowLimit > 0) {
-    const lowSql = `SELECT term, score FROM word_scores WHERE submissions > 0 ORDER BY score ASC, submissions ASC, rowid ASC LIMIT ${lowLimit};`;
-    const raw = await runSqlite(lowSql, { json: true });
+  if (takePracticed > 0) {
+    const sql = `SELECT term, score FROM word_scores
+      WHERE submissions > 0 AND score < ${masteryThreshold}
+      ORDER BY score ASC, submissions ASC, rowid ASC
+      LIMIT ${takePracticed};`;
+    const raw = await runSqlite(sql, { json: true });
     try {
-      results.low = raw ? JSON.parse(raw) : [];
+      result.practiced = raw ? JSON.parse(raw) : [];
     } catch (error) {
-      console.error('Failed to parse low-score suggestion:', error.message);
+      console.error('Failed to parse practiced suggestion:', error.message);
     }
   }
 
-  if (newLimit > 0) {
-    const newSql = `SELECT term, score FROM word_scores WHERE submissions = 0 ORDER BY rowid ASC LIMIT ${newLimit};`;
-    const rawNew = await runSqlite(newSql, { json: true });
+  const remaining = Math.max(0, takeTotal - result.practiced.length);
+  if (remaining > 0) {
+    const sql = `SELECT term, score FROM word_scores
+      WHERE submissions = 0
+      ORDER BY rowid ASC
+      LIMIT ${remaining};`;
+    const raw = await runSqlite(sql, { json: true });
     try {
-      results.fresh = rawNew ? JSON.parse(rawNew) : [];
+      result.fresh = raw ? JSON.parse(raw) : [];
     } catch (error) {
-      console.error('Failed to parse new-term suggestion:', error.message);
+      console.error('Failed to parse fresh suggestion:', error.message);
     }
   }
 
-  return results;
+  return result;
 }
 
 async function ensureTableColumns() {
@@ -322,11 +323,13 @@ async function requestListener(req, res) {
   if (pathname === '/api/word-suggestions' && req.method === 'GET') {
     try {
       const { query } = url.parse(req.url, true);
-      const lowLimit = Math.max(0, Math.min(50, Number(query.low) || 0));
-      const newLimit = Math.max(0, Math.min(50, Number(query.fresh) || Number(query.new) || 0));
-      const data = await getSuggestedTerms(lowLimit, newLimit);
+      const practicedCount = Math.max(0, Math.min(50, Number(query.practiced) || 0));
+      const totalCount = Math.max(0, Math.min(50, Number(query.total) || 0));
+      const threshold = Number(query.threshold);
+      const masteryThreshold = Number.isFinite(threshold) ? threshold : 1;
+      const data = await getSuggestedTerms(practicedCount, totalCount, masteryThreshold);
       return sendJson(res, 200, {
-        low: Array.isArray(data.low) ? data.low : [],
+        practiced: Array.isArray(data.practiced) ? data.practiced : [],
         fresh: Array.isArray(data.fresh) ? data.fresh : []
       });
     } catch (error) {
