@@ -5,8 +5,12 @@ const progressSearchEl = document.getElementById('progress-search');
 const scoreFilterEl = document.getElementById('score-filter');
 const statusFilterEl = document.getElementById('status-filter');
 const refreshBtn = document.getElementById('refresh-progress');
+const sortFieldEl = document.getElementById('sort-field');
+const sortDirectionBtn = document.getElementById('sort-direction');
 
 let ALL_RECORDS = [];
+let SORT_FIELD = 'order';
+let SORT_ASC = true;
 
 function setProgressStatus(message, kind = 'info') {
   if (!progressStatusEl) return;
@@ -36,7 +40,7 @@ function applyFilters(records) {
   const hasScoreLimit = Number.isFinite(scoreLimit);
   const status = statusFilterEl.value;
 
-  return records.filter(record => {
+  const filtered = records.filter(record => {
     const term = record.term || '';
     const score = Number(record.score) || 0;
     const submissions = Number(record.submissions) || 0;
@@ -50,6 +54,51 @@ function applyFilters(records) {
 
     return true;
   });
+
+  return sortRecords(filtered);
+}
+
+function sortRecords(records) {
+  const arr = [...records];
+  const field = SORT_FIELD;
+  const direction = SORT_ASC ? 1 : -1;
+
+  arr.sort((a, b) => {
+    switch (field) {
+      case 'term': {
+        return a.term.localeCompare(b.term, 'en', { sensitivity: 'base' }) * direction;
+      }
+      case 'score': {
+        const diff = (Number(a.score) || 0) - (Number(b.score) || 0);
+        return diff === 0 ? a.term.localeCompare(b.term) * direction : diff * direction;
+      }
+      case 'submissions': {
+        const diff = (Number(a.submissions) || 0) - (Number(b.submissions) || 0);
+        return diff === 0 ? a.term.localeCompare(b.term) * direction : diff * direction;
+      }
+      case 'last_submission': {
+        const ta = getTimestamp(a.last_submission);
+        const tb = getTimestamp(b.last_submission);
+        const diff = ta - tb;
+        return diff === 0 ? a.term.localeCompare(b.term) * direction : diff * direction;
+      }
+      case 'order':
+      default: {
+        const diff = (Number(a._order) || 0) - (Number(b._order) || 0);
+        return diff === 0 ? a.term.localeCompare(b.term) * direction : diff * direction;
+      }
+    }
+  });
+
+  return arr;
+}
+
+function getTimestamp(value) {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const date = new Date(value);
+  const ts = date.getTime();
+  if (Number.isNaN(ts)) return Number.NEGATIVE_INFINITY;
+  return ts;
 }
 
 function renderTable(records) {
@@ -102,7 +151,8 @@ async function fetchAllScores() {
       throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
     }
     const data = await response.json();
-    ALL_RECORDS = Array.isArray(data.scores) ? data.scores : [];
+    const scores = Array.isArray(data.scores) ? data.scores : [];
+    ALL_RECORDS = scores.map((record, idx) => ({ ...record, _order: idx }));
     renderTable(applyFilters(ALL_RECORDS));
     setProgressStatus(`已加载 ${ALL_RECORDS.length} 个词汇`, 'ok');
   } catch (error) {
@@ -132,9 +182,9 @@ async function updateWord(term, action) {
       // Update local cache
       const idx = ALL_RECORDS.findIndex(rec => rec.term === data.record.term);
       if (idx >= 0) {
-        ALL_RECORDS[idx] = data.record;
+        ALL_RECORDS[idx] = { ...data.record, _order: ALL_RECORDS[idx]._order };
       } else {
-        ALL_RECORDS.push(data.record);
+        ALL_RECORDS.push({ ...data.record, _order: ALL_RECORDS.length });
       }
       renderTable(applyFilters(ALL_RECORDS));
       setProgressStatus(`已更新「${term}」`, 'ok');
@@ -147,17 +197,29 @@ async function updateWord(term, action) {
   }
 }
 
-progressSearchEl.addEventListener('input', () => {
+function rerender(){
   renderTable(applyFilters(ALL_RECORDS));
-});
+}
 
-scoreFilterEl.addEventListener('input', () => {
-  renderTable(applyFilters(ALL_RECORDS));
-});
+progressSearchEl.addEventListener('input', rerender);
+scoreFilterEl.addEventListener('input', rerender);
+statusFilterEl.addEventListener('change', rerender);
 
-statusFilterEl.addEventListener('change', () => {
-  renderTable(applyFilters(ALL_RECORDS));
-});
+if (sortFieldEl) {
+  sortFieldEl.addEventListener('change', () => {
+    SORT_FIELD = sortFieldEl.value;
+    rerender();
+  });
+}
+
+if (sortDirectionBtn) {
+  sortDirectionBtn.addEventListener('click', () => {
+    SORT_ASC = !SORT_ASC;
+    sortDirectionBtn.dataset.direction = SORT_ASC ? 'asc' : 'desc';
+    sortDirectionBtn.textContent = SORT_ASC ? '⬆️ 升序' : '⬇️ 降序';
+    rerender();
+  });
+}
 
 progressBodyEl.addEventListener('click', (event) => {
   const target = event.target;

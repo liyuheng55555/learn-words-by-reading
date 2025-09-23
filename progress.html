@@ -39,6 +39,17 @@
             <option value="learning">学习中</option>
           </select>
         </label>
+        <label>
+          排序字段
+          <select id="sort-field">
+            <option value="order">编号</option>
+            <option value="term">字典序</option>
+            <option value="score">分数</option>
+            <option value="submissions">练习次数</option>
+            <option value="last_submission">最后练习时间</option>
+          </select>
+        </label>
+        <button id="sort-direction" class="sort-btn" data-direction="asc">⬆️ 升序</button>
       </div>
 
       <div id="progress-status" class="sync-status"></div>
