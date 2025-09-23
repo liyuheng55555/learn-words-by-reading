@@ -480,43 +480,133 @@ function createArticlePrompt(words){
   const wordGoal = DEFAULT_ARTICLE_WORD_GOAL;
   const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
-  return `请输出一个 JSON 对象，字段如下：\n{\n  "article": "段落使用\\n分隔的英文文章，需使用Markdown粗体 **word** 标注词汇",\n  "variants": [\n    {"original": "原始词汇（与下方列表一致）", "used": "文章中实际出现的词汇形式（不含**，保留大小写/时态变化）"}\n  ]\n}\n\n写作要求：\n- 面向英语学习者，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。\n- 将文章正文放在 JSON 的 article 字段中，换行使用\\n 表示，正文中每个词至少出现一次并使用 **word** 标注。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次。\n- 如需改变大小写、时态或语态，请在 variants 列表中标明 original 与 used 的对应关系；若词形未变化，也需提供 used=original。\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n目标词汇（顺序随机）：\n${bulletList}`;
+  return `请写一篇面向英语学习者的英文短文，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落，总字数约 ${wordGoal} 词。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（可根据语境调整大小写、时态或语态。）\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n请仅输出文章正文，保留 Markdown 标记，不要额外添加说明或JSON。\n\n目标词汇（顺序随机）：\n${bulletList}`;
 }
 
-function parseGeneratedArticleResponse(aiContent){
-  if (!aiContent) {
-    throw new Error('AI未返回文章内容');
-  }
-  let jsonText = aiContent.trim();
-  const fencedMatch = jsonText.match(/```(?:json)?([\s\S]*?)```/i);
-  if (fencedMatch) {
-    jsonText = fencedMatch[1].trim();
+function createVariantMappingPrompt(article, words){
+  const list = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
+  return `请阅读下方的英文文章，并根据提供的目标词汇列表，指出文章中每个词汇的实际写法。\n\n输出一个 JSON 对象，格式如下：\n{\n  "pairs": [\n    {"original": "目标词汇", "used": "文章中的实际写法（去掉**，若未出现则留空字符串）"}\n  ]\n}\n\n要求：\n- original 必须与提供的目标词汇完全一致；\n- used 为文章中出现的具体形式（保留大小写/单复数等变化，但去掉任何 Markdown ** 标记）；\n- 如果某个词未在文章中出现，将 used 设为空字符串。\n\n英文文章：\n"""\n${article}\n"""\n\n目标词汇列表：\n${list}`;
+}
+
+function cleanVariantValue(value){
+  if (typeof value !== 'string') return '';
+  return value.replace(/\*\*/g, '').trim();
+}
+
+function parseVariantMappingResponse(rawText, originalWords){
+  const fallback = (originalWords || []).map(word => ({ original: word, used: word }));
+  if (!rawText) return fallback;
+  let text = rawText.trim();
+  if (!text) return fallback;
+
+  let jsonText = null;
+  const fenced = text.match(/```(?:json)?([\s\S]*?)```/i);
+  if (fenced) {
+    jsonText = fenced[1].trim();
   } else {
-    const looseMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (looseMatch) {
-      jsonText = looseMatch[0];
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      jsonText = match[0];
     }
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch (error) {
-    console.error('[Article Generator] JSON解析失败:', error, '\n原始内容:', aiContent);
-    throw new Error('AI未返回有效的JSON结构');
+
+  let pairs = [];
+  if (jsonText) {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const array = Array.isArray(parsed?.pairs) ? parsed.pairs : Array.isArray(parsed) ? parsed : [];
+      pairs = array
+        .map(entry => {
+          if (!entry || typeof entry !== 'object') return null;
+          const original = typeof entry.original === 'string' ? entry.original.trim() : '';
+          const used = cleanVariantValue(entry.used ?? '');
+          if (!original) return null;
+          return { original, used: used || '' };
+        })
+        .filter(Boolean);
+    } catch (error) {
+      console.warn('[Variant Mapping] JSON解析失败，尝试解析纯文本格式', error);
+      pairs = [];
+    }
   }
-  const article = typeof parsed.article === 'string' ? parsed.article.trim() : '';
-  if (!article) {
-    throw new Error('JSON 中缺少 article 字段');
+
+  if (!pairs.length) {
+    const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/^(.+?)\s*(?:=>|->|：|:|=)\s*(.+)$/);
+      if (!match) continue;
+      const original = match[1].trim();
+      const used = cleanVariantValue(match[2]);
+      if (original) {
+        pairs.push({ original, used });
+      }
+    }
   }
-  const variantsRaw = Array.isArray(parsed.variants) ? parsed.variants : [];
-  const variants = variantsRaw.map(entry => {
-    if (!entry || typeof entry !== 'object') return null;
-    const original = typeof entry.original === 'string' ? entry.original.trim() : '';
-    const used = typeof entry.used === 'string' ? entry.used.trim() : '';
-    if (!original) return null;
-    return { original, used: used || original };
-  }).filter(Boolean);
-  return { article, variants };
+
+  const normalized = new Map();
+  for (const pair of pairs) {
+    const original = typeof pair.original === 'string' ? pair.original.trim() : '';
+    if (!original) continue;
+    const key = original.toLowerCase();
+    const used = cleanVariantValue(pair.used || original);
+    if (!normalized.has(key)) {
+      normalized.set(key, { original, used: used || original });
+    }
+  }
+
+  const result = [];
+  for (const original of originalWords || []) {
+    const key = original.trim().toLowerCase();
+    const mapped = normalized.get(key);
+    const used = mapped ? mapped.used : original;
+    result.push({ original, used });
+  }
+
+  return result;
+}
+
+async function requestVariantMappings(apiUrl, apiKey, model, article, words){
+  const prompt = createVariantMappingPrompt(article, words);
+  const body = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are an assistant that extracts vocabulary mappings and responds with concise JSON.'
+      },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0,
+    max_tokens: 600
+  };
+
+  console.log('[Variant Mapping] 请求体:', JSON.stringify(body, null, 2));
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  console.log('[Variant Mapping] 响应状态:', response.status, response.statusText);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Variant Mapping] API错误响应:', errorText);
+    throw new Error(`词形映射请求失败: ${response.status} ${response.statusText}: ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log('[Variant Mapping] API响应:', result);
+  const message = result?.choices?.[0]?.message;
+  if (!message) {
+    throw new Error('词形映射响应格式异常');
+  }
+  const text = extractMessageText(message);
+  console.log('[Variant Mapping] AI回复:', text);
+  return parseVariantMappingResponse(text, words);
 }
 
 async function handleGenerateArticle(){
@@ -559,6 +649,8 @@ async function handleGenerateArticle(){
       max_tokens: Math.min(1200, Math.round(DEFAULT_ARTICLE_WORD_GOAL * 4.2))
     };
 
+    console.log('[Article Generator] 请求体:', JSON.stringify(body, null, 2));
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -574,12 +666,36 @@ async function handleGenerateArticle(){
     }
 
     const result = await response.json();
-    const message = result?.choices?.[0]?.message || {};
-    const aiContent = extractMessageText(message);
-    const { article, variants } = parseGeneratedArticleResponse(aiContent);
-    console.log('[Article Generator] 解析后的变形映射:', variants);
+    console.log('[Article Generator] API响应:', result);
+    const message = result?.choices?.[0]?.message;
+    if (!message) {
+      throw new Error('AI未返回文章内容');
+    }
+    const article = extractMessageText(message);
+    if (!article) {
+      throw new Error('AI未返回文章内容');
+    }
 
-    articleEditor.value = article;
+    articleEditor.value = article.trim();
+
+    let variants;
+    let mappingFailed = false;
+    try {
+      setGeneratorStatus('文章生成成功，正在分析词形映射…', 'info');
+      variants = await requestVariantMappings(apiUrl, apiKey, model, article, words);
+      if (!Array.isArray(variants) || !variants.length) {
+        throw new Error('未获得有效的词形映射');
+      }
+    } catch (mappingError) {
+      console.error('[Article Generator] 词形映射失败:', mappingError);
+      variants = words.map(original => ({ original, used: original }));
+      setGeneratorStatus('文章生成完成，但词形映射失败，已使用原始词汇。', 'warn');
+      toast('词形映射失败，已使用原始词汇', 'warn');
+      mappingFailed = true;
+    }
+
+    console.log('[Article Generator] 最终词形映射:', variants);
+
     processArticleContent(article, variants);
     switchToViewMode();
     const missingTerms = findMissingTerms(article, words, variants);
@@ -587,7 +703,7 @@ async function handleGenerateArticle(){
       const message = `⚠️ 已生成文章，但缺少 ${missingTerms.length} 个词：${missingTerms.join('，')}`;
       setGeneratorStatus(message, 'warn');
       toast('生成完成，但存在缺失词汇，请手动补充。', 'warn');
-    } else {
+    } else if (!mappingFailed) {
       setGeneratorStatus('AI文章生成完成，词汇与词形均已覆盖 ✓', 'ok');
       toast('文章生成成功并包含全部目标词汇！', 'ok');
     }
