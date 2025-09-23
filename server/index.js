@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS word_scores (
   term TEXT PRIMARY KEY,
   score REAL NOT NULL DEFAULT 0,
   submissions INTEGER NOT NULL DEFAULT 0,
-  last_submission TEXT
+  last_submission TEXT,
+  correct_count INTEGER NOT NULL DEFAULT 0,
+  incorrect_count INTEGER NOT NULL DEFAULT 0
 );`;
   await runSqlite(schema);
   await ensureTableColumns();
@@ -80,7 +82,7 @@ function sendText(res, statusCode, text) {
 }
 
 async function getScores() {
-  const output = await runSqlite('SELECT term, score, submissions, last_submission FROM word_scores ORDER BY rowid;', { json: true });
+  const output = await runSqlite('SELECT term, score, submissions, last_submission, correct_count, incorrect_count FROM word_scores ORDER BY rowid;', { json: true });
   if (!output) return [];
   try {
     return JSON.parse(output);
@@ -107,12 +109,14 @@ async function applyScores(results) {
     const similarity = Number(item.similarity);
     if (!Number.isFinite(similarity)) continue;
     const delta = computeDelta(similarity);
+    const isCorrect = similarity >= 0.6 ? 1 : 0;
+    const incorrect = isCorrect ? 0 : 1;
     const termEscaped = item.term.replace(/'/g, "''");
     statements.push(
-      `INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${termEscaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`
+      `INSERT INTO word_scores(term, score, submissions, last_submission, correct_count, incorrect_count) VALUES ('${termEscaped}', 0, 0, NULL, 0, 0) ON CONFLICT(term) DO NOTHING;`
     );
     statements.push(
-      `UPDATE word_scores SET score = score + (${delta}), submissions = submissions + 1, last_submission = '${timestamp}' WHERE term = '${termEscaped}';`
+      `UPDATE word_scores SET score = score + (${delta}), submissions = submissions + 1, last_submission = '${timestamp}', correct_count = correct_count + ${isCorrect}, incorrect_count = incorrect_count + ${incorrect} WHERE term = '${termEscaped}';`
     );
   }
   statements.push('COMMIT;');
@@ -133,7 +137,7 @@ async function getScoresForTerms(terms) {
   if (!uniqueTerms.length) return [];
 
   const escapedList = uniqueTerms.map(term => `'${term.replace(/'/g, "''")}'`).join(',');
-  const sql = `SELECT term, score, submissions, last_submission FROM word_scores WHERE term IN (${escapedList});`;
+  const sql = `SELECT term, score, submissions, last_submission, correct_count, incorrect_count FROM word_scores WHERE term IN (${escapedList});`;
   let parsed = [];
   const raw = await runSqlite(sql, { json: true });
   if (raw) {
@@ -201,6 +205,12 @@ async function ensureTableColumns() {
   if (!names.has('last_submission')) {
     alters.push('ALTER TABLE word_scores ADD COLUMN last_submission TEXT;');
   }
+  if (!names.has('correct_count')) {
+    alters.push('ALTER TABLE word_scores ADD COLUMN correct_count INTEGER NOT NULL DEFAULT 0;');
+  }
+  if (!names.has('incorrect_count')) {
+    alters.push('ALTER TABLE word_scores ADD COLUMN incorrect_count INTEGER NOT NULL DEFAULT 0;');
+  }
   for (const stmt of alters) {
     await runSqlite(stmt);
   }
@@ -259,7 +269,7 @@ async function seedVocabulary() {
       const term = columns[1]?.trim();
       if (!term) continue;
       const escaped = term.replace(/'/g, "''");
-      statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${escaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`);
+      statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission, correct_count, incorrect_count) VALUES ('${escaped}', 0, 0, NULL, 0, 0) ON CONFLICT(term) DO NOTHING;`);
     }
     statements.push('COMMIT;');
     await runSqlite(statements.join('\n'));
@@ -313,13 +323,13 @@ async function handleWordStatus(req, res) {
 
     const escaped = term.replace(/'/g, "''");
     const statements = ['BEGIN TRANSACTION;'];
-    statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${escaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`);
+    statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission, correct_count, incorrect_count) VALUES ('${escaped}', 0, 0, NULL, 0, 0) ON CONFLICT(term) DO NOTHING;`);
 
     if (action === 'mastered') {
       const timestamp = new Date().toISOString();
-      statements.push(`UPDATE word_scores SET score = 999, submissions = submissions + 1, last_submission = '${timestamp}' WHERE term = '${escaped}';`);
+      statements.push(`UPDATE word_scores SET score = 999, submissions = submissions + 1, last_submission = '${timestamp}', correct_count = correct_count + 1 WHERE term = '${escaped}';`);
     } else if (action === 'reset') {
-      statements.push(`UPDATE word_scores SET score = 0, submissions = 0, last_submission = NULL WHERE term = '${escaped}';`);
+      statements.push(`UPDATE word_scores SET score = 0, submissions = 0, last_submission = NULL, correct_count = 0, incorrect_count = 0 WHERE term = '${escaped}';`);
     }
 
     statements.push('COMMIT;');
