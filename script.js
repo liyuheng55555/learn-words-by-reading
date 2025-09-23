@@ -650,26 +650,34 @@ function fill(data){
   }
 }
 
+function persistAnswers(){
+  try {
+    const data = gather();
+    localStorage.setItem(KEY, JSON.stringify(data));
+  } catch (error) {
+    console.warn('[Persist Answers] 保存失败:', error);
+  }
+}
+
+let answerSaveTimer = null;
+function schedulePersistAnswers(){
+  if (answerSaveTimer) clearTimeout(answerSaveTimer);
+  answerSaveTimer = setTimeout(() => {
+    answerSaveTimer = null;
+    persistAnswers();
+  }, 300);
+}
+
 // Auto-load if present
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
   fill(saved);
 } catch {}
 
-// Button event listeners
-document.getElementById('save').addEventListener('click', ()=>{
-  const data = gather();
-  localStorage.setItem(KEY, JSON.stringify(data));
-  toast('已保存到本地 ✓', 'ok');
-});
-
-document.getElementById('load').addEventListener('click', ()=>{
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    fill(saved);
-    toast('已从本地恢复 ✓', 'ok');
-  } catch {
-    toast('未找到本地数据', 'warn');
+listEl.addEventListener('input', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.dataset.term) {
+    schedulePersistAnswers();
   }
 });
 
@@ -678,44 +686,10 @@ document.getElementById('clear').addEventListener('click', ()=>{
     const el = document.getElementById(makeId(term));
     if (el) el.value = '';
   }
+  persistAnswers();
   toast('已清空输入', 'warn');
 });
 
-document.getElementById('export').addEventListener('click', ()=>{
-  const data = gather();
-  // Create CSV with header
-  const rows = [["English","Chinese","Similarity"]];
-  for (const term of VOCABS){
-    const answer = (data[term] || '').replaceAll('\n',' ').trim();
-    const similarity = LAST_GRADING_RESULTS?.[term]?.similarity;
-    const similarityFormatted = typeof similarity === 'number' ? similarity.toFixed(2) : '';
-    rows.push([term, answer, similarityFormatted]);
-  }
-  const csv = toCSV(rows);
-  // BOM for Excel UTF-8
-  const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'english-chinese-fill.csv';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  toast('CSV 已生成并开始下载', 'ok');
-});
-
-// Helper functions
-function toCSV(rows){
-  return rows.map(r => r.map(cell => csvCell(cell)).join(',')).join('\n');
-}
-
-function csvCell(v){
-  if (v == null) return '';
-  const s = String(v);
-  if (/[",\n]/.test(s)) return '"' + s.replaceAll('"','""') + '"';
-  return s;
-}
 
 // Toast notification
 function toast(msg, kind){

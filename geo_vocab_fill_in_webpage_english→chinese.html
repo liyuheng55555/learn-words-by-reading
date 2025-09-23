@@ -12,7 +12,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h1>阅读学单词 · Geoscience Vocab Toolkit</h1>
-          <div class="hint">说明：上传包含**标记词汇的英文文章文件。右侧为每个词的中文释义填空。点击"导出CSV"即可生成 "英文,中文填空" 文件。（本页离线运行，数据仅保存在浏览器）</div>
+          <div class="hint">说明：上传包含**标记词汇的英文文章文件。右侧为每个词的中文释义填空。（本页离线运行，数据仅保存在浏览器）</div>
         </div>
       </div>
     </div>
@@ -45,10 +45,7 @@
         <div class="search"><input id="filter" placeholder="筛选词汇…（支持模糊搜索）" /></div>
         <div class="controls">
           <a class="nav-link" href="progress.html" target="_blank">📊 词汇掌握情况</a>
-          <button id="save">保存到本地</button>
-          <button id="load">从本地恢复</button>
           <button id="clear">清空答案</button>
-          <button id="export">导出CSV</button>
           <button id="sync-server" class="sync-btn">⬆️ 同步到服务器</button>
           <button id="ai-grade" class="ai-btn">🤖 AI工具箱</button>
           <button id="ai-identity-check" class="ai-identity-btn">🔍 检测AI身份</button>
@@ -120,7 +117,7 @@
           <div class="server-scores" id="server-scores"></div>
         </div>
         <div class="list" id="list"></div>
-        <div class="footer-note">提示：输入会自动保存到 <code>localStorage</code>（点击“保存到本地”立即持久化）。导出文件含表头：<em>English,Chinese</em>。</div>
+        <div class="footer-note">提示：输入会自动保存到本地浏览器的 <code>localStorage</code>，建议配合“同步到服务器”或 AI 工具备份重要练习。</div>
       </div>
     </aside>
   </main>
