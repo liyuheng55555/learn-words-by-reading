@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'word_scores.db');
+const VOCAB_PATH = path.join(DATA_DIR, 'vocabulary.csv');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -76,7 +77,7 @@ function sendText(res, statusCode, text) {
 }
 
 async function getScores() {
-  const output = await runSqlite('SELECT term, score FROM word_scores ORDER BY LOWER(term);', { json: true });
+  const output = await runSqlite('SELECT term, score FROM word_scores ORDER BY rowid;', { json: true });
   if (!output) return [];
   try {
     return JSON.parse(output);
@@ -112,6 +113,68 @@ async function applyScores(results) {
   }
   statements.push('COMMIT;');
   await runSqlite(statements.join('\n'));
+}
+
+function parseCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      const next = line[i + 1];
+      if (inQuotes && next === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      cells.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+async function hasExistingScores() {
+  const output = await runSqlite('SELECT COUNT(*) AS count FROM word_scores;', { json: true });
+  if (!output) return false;
+  try {
+    const parsed = JSON.parse(output);
+    const first = Array.isArray(parsed) ? parsed[0] : null;
+    const count = first ? Number(first.count) : 0;
+    return Number.isFinite(count) && count > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function seedVocabulary() {
+  if (!fs.existsSync(VOCAB_PATH)) return;
+  if (await hasExistingScores()) return;
+  try {
+    const raw = fs.readFileSync(VOCAB_PATH, 'utf-8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    if (lines.length <= 1) return; // header only
+
+    const statements = ['BEGIN TRANSACTION;'];
+    for (let i = 1; i < lines.length; i++) {
+      const columns = parseCsvLine(lines[i]);
+      if (!columns || columns.length < 2) continue;
+      const term = columns[1]?.trim();
+      if (!term) continue;
+      const escaped = term.replace(/'/g, "''");
+      statements.push(`INSERT INTO word_scores(term, score) VALUES ('${escaped}', 0) ON CONFLICT(term) DO NOTHING;`);
+    }
+    statements.push('COMMIT;');
+    await runSqlite(statements.join('\n'));
+  } catch (error) {
+    console.error('Failed to seed vocabulary:', error.message);
+  }
 }
 
 async function handlePostScores(req, res) {
@@ -176,6 +239,7 @@ async function requestListener(req, res) {
 async function start() {
   try {
     await ensureDatabase();
+    await seedVocabulary();
   } catch (error) {
     console.error('Failed to initialize database:', error.message);
     process.exit(1);
