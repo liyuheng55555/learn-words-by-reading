@@ -151,17 +151,23 @@ function renderServerScores(scores){
     return;
   }
 
-  const rows = scores.map(({ term, score }) => {
+  const rows = scores.map(({ term, score, submissions, last_submission: lastSubmission }) => {
     const safeTerm = escapeHtml(term);
     const val = Number(score);
     const displayScore = Number.isFinite(val) ? val.toFixed(2) : '0.00';
-    return `<tr><td>${safeTerm}</td><td>${displayScore}</td></tr>`;
+    const submissionCount = Number.isFinite(Number(submissions)) ? Number(submissions) : 0;
+    let displayTime = '-';
+    if (lastSubmission) {
+      const date = new Date(lastSubmission);
+      displayTime = Number.isNaN(date.getTime()) ? escapeHtml(lastSubmission) : date.toLocaleString();
+    }
+    return `<tr><td>${safeTerm}</td><td>${displayScore}</td><td>${submissionCount}</td><td>${escapeHtml(displayTime)}</td></tr>`;
   }).join('');
 
   serverScoresEl.innerHTML = `
     <h5>服务器词表得分</h5>
     <table>
-      <thead><tr><th>词汇</th><th>累计分数</th></tr></thead>
+      <thead><tr><th>词汇</th><th>累计分数</th><th>提交次数</th><th>最后提交时间</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;

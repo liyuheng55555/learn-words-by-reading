@@ -50,9 +50,12 @@ async function ensureDatabase() {
   const schema = `PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS word_scores (
   term TEXT PRIMARY KEY,
-  score REAL NOT NULL DEFAULT 0
+  score REAL NOT NULL DEFAULT 0,
+  submissions INTEGER NOT NULL DEFAULT 0,
+  last_submission TEXT
 );`;
   await runSqlite(schema);
+  await ensureTableColumns();
 }
 
 function sendJson(res, statusCode, data) {
@@ -77,7 +80,7 @@ function sendText(res, statusCode, text) {
 }
 
 async function getScores() {
-  const output = await runSqlite('SELECT term, score FROM word_scores ORDER BY rowid;', { json: true });
+  const output = await runSqlite('SELECT term, score, submissions, last_submission FROM word_scores ORDER BY rowid;', { json: true });
   if (!output) return [];
   try {
     return JSON.parse(output);
@@ -98,6 +101,7 @@ function computeDelta(similarity) {
 async function applyScores(results) {
   if (!Array.isArray(results) || results.length === 0) return;
   const statements = ['BEGIN TRANSACTION;'];
+  const timestamp = new Date().toISOString();
   for (const item of results) {
     if (!item || typeof item.term !== 'string') continue;
     const similarity = Number(item.similarity);
@@ -105,14 +109,36 @@ async function applyScores(results) {
     const delta = computeDelta(similarity);
     const termEscaped = item.term.replace(/'/g, "''");
     statements.push(
-      `INSERT INTO word_scores(term, score) VALUES ('${termEscaped}', 0) ON CONFLICT(term) DO NOTHING;`
+      `INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${termEscaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`
     );
     statements.push(
-      `UPDATE word_scores SET score = score + (${delta}) WHERE term = '${termEscaped}';`
+      `UPDATE word_scores SET score = score + (${delta}), submissions = submissions + 1, last_submission = '${timestamp}' WHERE term = '${termEscaped}';`
     );
   }
   statements.push('COMMIT;');
   await runSqlite(statements.join('\n'));
+}
+
+async function ensureTableColumns() {
+  const infoRaw = await runSqlite('PRAGMA table_info(word_scores);', { json: true });
+  let columns = [];
+  try {
+    columns = JSON.parse(infoRaw);
+  } catch (error) {
+    console.error('Failed to read table info:', error.message);
+    return;
+  }
+  const names = new Set(columns.map((col) => col.name));
+  const alters = [];
+  if (!names.has('submissions')) {
+    alters.push('ALTER TABLE word_scores ADD COLUMN submissions INTEGER NOT NULL DEFAULT 0;');
+  }
+  if (!names.has('last_submission')) {
+    alters.push('ALTER TABLE word_scores ADD COLUMN last_submission TEXT;');
+  }
+  for (const stmt of alters) {
+    await runSqlite(stmt);
+  }
 }
 
 function parseCsvLine(line) {
@@ -168,7 +194,7 @@ async function seedVocabulary() {
       const term = columns[1]?.trim();
       if (!term) continue;
       const escaped = term.replace(/'/g, "''");
-      statements.push(`INSERT INTO word_scores(term, score) VALUES ('${escaped}', 0) ON CONFLICT(term) DO NOTHING;`);
+      statements.push(`INSERT INTO word_scores(term, score, submissions, last_submission) VALUES ('${escaped}', 0, 0, NULL) ON CONFLICT(term) DO NOTHING;`);
     }
     statements.push('COMMIT;');
     await runSqlite(statements.join('\n'));
