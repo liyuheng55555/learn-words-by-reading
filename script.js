@@ -308,7 +308,7 @@ function createArticlePrompt(words, topic){
   const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
   const topicLine = topic ? `主题提示：${topic}\n\n` : '';
-  return `${topicLine}请写一篇面向地学学习者的英文短文，使用Markdown段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 文章总长度约 ${wordGoal} 个英文单词，可上下浮动 10%。\n- 分成 ${paragraphCount} 个段落。\n- 下列每个词必须至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 内容要自然流畅，信息准确，可适当加入背景、例子或解释。\n\n目标词汇：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
+  return `${topicLine}请写一篇面向地学学习者的英文短文，使用Markdown段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落。\n- 下列每个词必须至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（保持原始词形，必要时可稍微变化时态/单复数。）\n- 内容要自然流畅，信息准确，可适当加入背景、例子或解释。\n\n目标词汇：\n${bulletList}\n\n请直接输出文章正文，不要附加额外解释。`;
 }
 
 async function handleGenerateArticle(){
