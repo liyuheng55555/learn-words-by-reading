@@ -799,6 +799,25 @@ button:hover, .btn:hover {
   background: rgba(38,139,210,.12);
   color: var(--accent);
   font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.progress-table th.sortable::after {
+  content: attr(data-indicator);
+  position: absolute;
+  right: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-table th.active {
+  color: var(--accent-2);
+}
+
+.progress-table th.active::after {
+  color: var(--accent-2);
 }
 
 .progress-table tr:last-child td {

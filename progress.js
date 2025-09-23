@@ -5,8 +5,7 @@ const progressSearchEl = document.getElementById('progress-search');
 const scoreFilterEl = document.getElementById('score-filter');
 const statusFilterEl = document.getElementById('status-filter');
 const refreshBtn = document.getElementById('refresh-progress');
-const sortFieldEl = document.getElementById('sort-field');
-const sortDirectionBtn = document.getElementById('sort-direction');
+const tableHeaderEl = document.querySelector('.progress-table thead');
 
 let ALL_RECORDS = [];
 let SORT_FIELD = 'order';
@@ -153,6 +152,7 @@ async function fetchAllScores() {
     const data = await response.json();
     const scores = Array.isArray(data.scores) ? data.scores : [];
     ALL_RECORDS = scores.map((record, idx) => ({ ...record, _order: idx }));
+    updateHeaderIndicators();
     renderTable(applyFilters(ALL_RECORDS));
     setProgressStatus(`已加载 ${ALL_RECORDS.length} 个词汇`, 'ok');
   } catch (error) {
@@ -205,19 +205,45 @@ progressSearchEl.addEventListener('input', rerender);
 scoreFilterEl.addEventListener('input', rerender);
 statusFilterEl.addEventListener('change', rerender);
 
-if (sortFieldEl) {
-  sortFieldEl.addEventListener('change', () => {
-    SORT_FIELD = sortFieldEl.value;
+if (tableHeaderEl) {
+  tableHeaderEl.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const th = target.closest('th');
+    if (!th) return;
+    const sortKey = th.dataset.sort;
+    if (!sortKey) return;
+
+    if (SORT_FIELD === sortKey) {
+      SORT_ASC = !SORT_ASC;
+    } else {
+      SORT_FIELD = sortKey;
+      SORT_ASC = true;
+    }
+
+    updateHeaderIndicators();
     rerender();
   });
 }
 
-if (sortDirectionBtn) {
-  sortDirectionBtn.addEventListener('click', () => {
-    SORT_ASC = !SORT_ASC;
-    sortDirectionBtn.dataset.direction = SORT_ASC ? 'asc' : 'desc';
-    sortDirectionBtn.textContent = SORT_ASC ? '⬆️ 升序' : '⬇️ 降序';
-    rerender();
+function updateHeaderIndicators() {
+  if (!tableHeaderEl) return;
+  const headers = tableHeaderEl.querySelectorAll('th');
+  headers.forEach((header) => {
+    const key = header.dataset.sort;
+    if (!key) {
+      header.classList.remove('sortable', 'active');
+      header.removeAttribute('data-indicator');
+      return;
+    }
+    header.classList.add('sortable');
+    if (key === SORT_FIELD) {
+      header.classList.add('active');
+      header.dataset.indicator = SORT_ASC ? '↑' : '↓';
+    } else {
+      header.classList.remove('active');
+      header.dataset.indicator = '';
+    }
   });
 }
 
@@ -239,3 +265,4 @@ if (refreshBtn) {
 }
 
 fetchAllScores();
+updateHeaderIndicators();
