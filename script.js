@@ -356,9 +356,14 @@ function getSavedAIConfig(){
   const apiUrlInput = document.getElementById('api-url');
   const apiKeyInput = document.getElementById('api-key');
   const modelInput = document.getElementById('ai-model');
-  const apiUrl = (localStorage.getItem('ai-api-url') || apiUrlInput?.value || '').trim();
-  const apiKey = (localStorage.getItem('ai-api-key') || apiKeyInput?.value || '').trim();
-  const model = (localStorage.getItem('ai-model') || modelInput?.value || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
+  const apiUrl = (apiUrlInput?.value?.trim() || localStorage.getItem('ai-api-url') || '').trim();
+  const apiKey = (apiKeyInput?.value?.trim() || localStorage.getItem('ai-api-key') || '').trim();
+  const modelFromInput = modelInput?.value?.trim();
+  const modelStored = localStorage.getItem('ai-model');
+  const model = (modelFromInput || modelStored || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
+  if (modelFromInput && modelFromInput !== modelStored) {
+    localStorage.setItem('ai-model', modelFromInput);
+  }
   return { apiUrl, apiKey, model };
 }
 
@@ -841,9 +846,13 @@ document.getElementById('ai-grade').addEventListener('click', async () => {
 
 // AI Identity Check Button
 aiIdentityCheckBtn.addEventListener('click', async () => {
+  const modelInput = document.getElementById('ai-model');
   const savedApiUrl = localStorage.getItem('ai-api-url');
   const savedApiKey = localStorage.getItem('ai-api-key');
-  const savedModel = localStorage.getItem('ai-model') || 'gpt-3.5-turbo';
+  const currentModel = (modelInput?.value?.trim() || localStorage.getItem('ai-model') || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
+  if (modelInput && modelInput.value && modelInput.value.trim()) {
+    localStorage.setItem('ai-model', modelInput.value.trim());
+  }
 
   if (!savedApiUrl || !savedApiKey) {
     alert('请先配置API地址和Key！\n\n点击"🤖 AI工具箱"按钮进行配置。');
@@ -854,7 +863,7 @@ aiIdentityCheckBtn.addEventListener('click', async () => {
   aiIdentityCheckBtn.disabled = true;
 
   try {
-    const identity = await checkAIIdentityForDisplay(savedApiUrl, savedApiKey, savedModel);
+    const identity = await checkAIIdentityForDisplay(savedApiUrl, savedApiKey, currentModel);
     // Show result in alert
     alert(`AI身份信息：\n\n${identity}`);
   } catch (error) {

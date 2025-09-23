@@ -72,6 +72,7 @@
 1. API地址：例如 `https://api.openai.com/v1/chat/completions`
 2. AI模型：例如 `gpt-3.5-turbo` 或 `claude-3-sonnet`
 3. API Key：从对应平台获取的API密钥
+4. 在“AI工具箱”中修改模型后会立即生效，并自动保存到浏览器 localStorage
 
 ## 文件说明
 
