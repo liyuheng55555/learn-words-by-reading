@@ -120,6 +120,59 @@ function escapeRegExp(str){
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function extractMessageText(message){
+  if (!message) return '';
+  const { content, text, tool_calls: toolCalls } = message;
+
+  const normalizePart = (part) => {
+    if (!part) return '';
+    if (typeof part === 'string') return part;
+    if (typeof part === 'number' || typeof part === 'boolean') return String(part);
+    if (typeof part === 'object') {
+      if (typeof part.text === 'string') return part.text;
+      if (Array.isArray(part.text)) return part.text.map(normalizePart).join('');
+      if (part.type === 'text' && typeof part.value === 'string') return part.value;
+      if (part.type === 'text' && typeof part.data === 'string') return part.data;
+      if (part.type === 'tool_call' && part.function?.arguments) {
+        return '';
+      }
+      return '';
+    }
+    return '';
+  };
+
+  let chunks = [];
+
+  if (typeof content === 'string') {
+    chunks.push(content);
+  } else if (Array.isArray(content)) {
+    chunks.push(content.map(normalizePart).join(''));
+  } else if (content && typeof content === 'object') {
+    if (typeof content.text === 'string') {
+      chunks.push(content.text);
+    } else if (Array.isArray(content.text)) {
+      chunks.push(content.text.map(normalizePart).join(''));
+    }
+  }
+
+  if (typeof text === 'string') {
+    chunks.push(text);
+  } else if (Array.isArray(text)) {
+    chunks.push(text.map(normalizePart).join(''));
+  }
+
+  if ((!chunks.length || chunks.join('').trim() === '') && Array.isArray(toolCalls)) {
+    for (const call of toolCalls) {
+      if (call?.function?.result && typeof call.function.result === 'string') {
+        chunks.push(call.function.result);
+      }
+    }
+  }
+
+  const combined = chunks.join('\n').trim();
+  return combined;
+}
+
 function makeTermRegex(term){
   const escaped = escapeRegExp(term.trim());
   if (!escaped) return null;
@@ -474,7 +527,8 @@ async function handleGenerateArticle(){
     }
 
     const result = await response.json();
-    const aiContent = result?.choices?.[0]?.message?.content?.trim();
+    const message = result?.choices?.[0]?.message || {};
+    const aiContent = extractMessageText(message);
     const { article, variants } = parseGeneratedArticleResponse(aiContent);
     console.log('[Article Generator] 解析后的变形映射:', variants);
 
@@ -1046,12 +1100,13 @@ async function gradeBatch(terms, data, apiUrl, apiKey, model = 'gpt-3.5-turbo') 
   const result = await response.json();
   console.log(`[Batch Grading] API响应:`, result);
 
-  if (!result.choices || !result.choices[0] || !result.choices[0].message) {
+  const message = result?.choices?.[0]?.message;
+  if (!message) {
     console.error(`[Batch Grading] 响应格式异常:`, result);
     throw new Error('API响应格式异常');
   }
 
-  const aiResponse = result.choices[0].message.content;
+  const aiResponse = extractMessageText(message);
   console.log(`[Batch Grading] AI回复内容:`, aiResponse);
 
   const parsedResults = parseGradingResponse(aiResponse, terms);
@@ -1327,12 +1382,17 @@ async function checkAIIdentityForDisplay(apiUrl, apiKey, model = 'gpt-3.5-turbo'
   const result = await response.json();
   console.log('[AI Identity] API响应:', result);
 
-  if (!result.choices || !result.choices[0] || !result.choices[0].message) {
+  const message = result?.choices?.[0]?.message;
+  if (!message) {
     console.error('[AI Identity] 响应格式异常:', result);
     throw new Error('API响应格式异常');
   }
 
-  const aiResponse = result.choices[0].message.content.trim();
+  const aiResponse = extractMessageText(message);
+  if (!aiResponse) {
+    console.error('[AI Identity] 未获得文本回复:', message);
+    throw new Error('AI未返回文本信息');
+  }
   console.log('[AI Identity] AI回复:', aiResponse);
 
   return aiResponse;
