@@ -24,6 +24,9 @@ const syncServerBtn = document.getElementById('sync-server');
 const syncStatusEl = document.getElementById('sync-status');
 const serverScoresEl = document.getElementById('server-scores');
 const scoreApiUrlInput = document.getElementById('score-api-url');
+const apiUrlInput = document.getElementById('api-url');
+const apiKeyInput = document.getElementById('api-key');
+const aiModelInput = document.getElementById('ai-model');
 const practicedCountInput = document.getElementById('practiced-count');
 const totalCountInput = document.getElementById('total-count');
 const masteryThresholdInput = document.getElementById('mastery-threshold');
@@ -182,6 +185,20 @@ function makeTermRegex(term){
   return new RegExp(`\\b${escaped}\\b`, 'i');
 }
 
+function persistInputToStorage(element, key, { trim = true } = {}) {
+  if (!element) return;
+  const handler = () => {
+    const raw = trim ? element.value.trim() : element.value;
+    if (raw) {
+      localStorage.setItem(key, raw);
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+  element.addEventListener('change', handler);
+  element.addEventListener('blur', handler);
+}
+
 function findMissingTerms(content, words, variantPairs = []){
   const text = content.replace(/\*\*/g, '');
   const usedVariants = new Set();
@@ -229,6 +246,11 @@ function setGeneratorStatus(message, kind = 'info'){
   generatorStatusEl.textContent = message || '';
   generatorStatusEl.style.color = palette[kind] || palette.info;
 }
+
+persistInputToStorage(apiUrlInput, 'ai-api-url');
+persistInputToStorage(apiKeyInput, 'ai-api-key');
+persistInputToStorage(aiModelInput, 'ai-model');
+persistInputToStorage(scoreApiUrlInput, 'score-api-url');
 
 function setStartGradeButton(text, disabled){
   if (!startGradeBtn) return;
@@ -406,17 +428,42 @@ async function handleAutoFillWords(){
 }
 
 function getSavedAIConfig(){
-  const apiUrlInput = document.getElementById('api-url');
-  const apiKeyInput = document.getElementById('api-key');
-  const modelInput = document.getElementById('ai-model');
-  const apiUrl = (apiUrlInput?.value?.trim() || localStorage.getItem('ai-api-url') || '').trim();
-  const apiKey = (apiKeyInput?.value?.trim() || localStorage.getItem('ai-api-key') || '').trim();
-  const modelFromInput = modelInput?.value?.trim();
-  const modelStored = localStorage.getItem('ai-model');
-  const model = (modelFromInput || modelStored || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
-  if (modelFromInput && modelFromInput !== modelStored) {
-    localStorage.setItem('ai-model', modelFromInput);
+  const rawUrl = apiUrlInput?.value?.trim();
+  const rawKey = apiKeyInput?.value?.trim();
+  const rawModel = aiModelInput?.value?.trim();
+
+  const storedUrl = localStorage.getItem('ai-api-url');
+  const storedKey = localStorage.getItem('ai-api-key');
+  const storedModel = localStorage.getItem('ai-model');
+
+  const apiUrl = (rawUrl || storedUrl || '').trim();
+  const apiKey = (rawKey || storedKey || '').trim();
+  const model = (rawModel || storedModel || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
+
+  if (rawUrl !== undefined) {
+    if (rawUrl) {
+      localStorage.setItem('ai-api-url', rawUrl);
+    } else {
+      localStorage.removeItem('ai-api-url');
+    }
   }
+
+  if (rawKey !== undefined) {
+    if (rawKey) {
+      localStorage.setItem('ai-api-key', rawKey);
+    } else {
+      localStorage.removeItem('ai-api-key');
+    }
+  }
+
+  if (rawModel !== undefined) {
+    if (rawModel) {
+      localStorage.setItem('ai-model', rawModel);
+    } else {
+      localStorage.removeItem('ai-model');
+    }
+  }
+
   return { apiUrl, apiKey, model };
 }
 
@@ -900,15 +947,9 @@ document.getElementById('ai-grade').addEventListener('click', async () => {
 
 // AI Identity Check Button
 aiIdentityCheckBtn.addEventListener('click', async () => {
-  const modelInput = document.getElementById('ai-model');
-  const savedApiUrl = localStorage.getItem('ai-api-url');
-  const savedApiKey = localStorage.getItem('ai-api-key');
-  const currentModel = (modelInput?.value?.trim() || localStorage.getItem('ai-model') || 'gpt-3.5-turbo').trim() || 'gpt-3.5-turbo';
-  if (modelInput && modelInput.value && modelInput.value.trim()) {
-    localStorage.setItem('ai-model', modelInput.value.trim());
-  }
+  const { apiUrl, apiKey, model } = getSavedAIConfig();
 
-  if (!savedApiUrl || !savedApiKey) {
+  if (!apiUrl || !apiKey) {
     alert('请先配置API地址和Key！\n\n点击"🤖 AI工具箱"按钮进行配置。');
     return;
   }
@@ -917,7 +958,7 @@ aiIdentityCheckBtn.addEventListener('click', async () => {
   aiIdentityCheckBtn.disabled = true;
 
   try {
-    const identity = await checkAIIdentityForDisplay(savedApiUrl, savedApiKey, currentModel);
+    const identity = await checkAIIdentityForDisplay(apiUrl, apiKey, model);
     // Show result in alert
     alert(`AI身份信息：\n\n${identity}`);
   } catch (error) {
@@ -935,20 +976,13 @@ document.getElementById('cancel-grade').addEventListener('click', () => {
 
 if (startGradeBtn) {
   startGradeBtn.addEventListener('click', async () => {
-    const apiUrl = document.getElementById('api-url').value.trim();
-    const apiKey = document.getElementById('api-key').value.trim();
-    const model = document.getElementById('ai-model').value.trim() || 'gpt-3.5-turbo';
+    const { apiUrl, apiKey, model } = getSavedAIConfig();
 
     if (!apiUrl || !apiKey) {
       aiConfigEl.style.display = 'block';
       toast('请填写API地址和Key', 'warn');
       return;
     }
-
-    // Save API settings
-    localStorage.setItem('ai-api-url', apiUrl);
-    localStorage.setItem('ai-api-key', apiKey);
-    localStorage.setItem('ai-model', model);
 
     const originalLabel = startGradeBtn.dataset.originalText || startGradeBtn.textContent;
     startGradeBtn.dataset.originalText = originalLabel;
