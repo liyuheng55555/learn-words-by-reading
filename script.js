@@ -577,7 +577,7 @@ async function requestVariantMappings(apiUrl, apiKey, model, article, words){
       { role: 'user', content: prompt }
     ],
     temperature: 0,
-    max_tokens: 600
+    max_tokens: 3000
   };
 
   console.log('[Variant Mapping] 请求体:', JSON.stringify(body, null, 2));
