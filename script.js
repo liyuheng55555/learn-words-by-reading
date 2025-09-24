@@ -1152,8 +1152,8 @@ async function startAIGrading(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
       setStartGradeButton(`判题中 0/${filledTerms.length}`, true);
     }
 
-    // Process in batches of 20
-    const batchSize = 20;
+    // Process in batches of 50
+    const batchSize = 50;
     const batches = [];
     for (let i = 0; i < filledTerms.length; i += batchSize) {
       batches.push(filledTerms.slice(i, i + batchSize));
