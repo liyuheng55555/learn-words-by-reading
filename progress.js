@@ -6,10 +6,17 @@ const scoreFilterEl = document.getElementById('score-filter');
 const statusFilterEl = document.getElementById('status-filter');
 const refreshBtn = document.getElementById('refresh-progress');
 const tableHeaderEl = document.querySelector('.progress-table thead');
+const contextPanelEl = document.getElementById('context-panel');
+const contextTitleEl = document.getElementById('context-title');
+const contextListEl = document.getElementById('context-list');
+const contextEmptyEl = document.getElementById('context-empty');
+const contextCloseBtn = document.getElementById('context-close');
 
 let ALL_RECORDS = [];
 let SORT_FIELD = 'order';
 let SORT_ASC = true;
+const CONTEXT_CACHE = new Map();
+let CURRENT_CONTEXT_TERM = '';
 
 function setProgressStatus(message, kind = 'info') {
   if (!progressStatusEl) return;
@@ -104,7 +111,7 @@ function renderTable(records) {
   if (!progressBodyEl) return;
 
   if (!records.length) {
-    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="5">未找到匹配的词汇。</td></tr>';
+    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="6">未找到匹配的词汇。</td></tr>';
     return;
   }
 
@@ -114,13 +121,17 @@ function renderTable(records) {
     const submissions = Number(record.submissions) || 0;
     const lastSubmission = record.last_submission;
     const order = Number(record._order);
+    const contexts = CONTEXT_CACHE.get(term) || [];
+    const hasContexts = contexts.length > 0;
+    const contextBadge = hasContexts ? ' <span class="context-indicator" title="查看最近语境">语境</span>' : '';
+    const termButton = `<button type="button" class="term-context-btn" data-term="${escapeHtml(term)}">${escapeHtml(term)}${contextBadge}</button>`;
 
     const masteredClass = score >= 999 ? 'status-mastered' : (submissions === 0 ? 'status-fresh' : '');
 
     return `
       <tr class="${masteredClass}">
         <td>${Number.isFinite(order) ? order + 1 : ''}</td>
-        <td>${escapeHtml(term)}</td>
+        <td>${termButton}</td>
         <td>${formatScore(score)}</td>
         <td>${submissions}</td>
         <td>${escapeHtml(formatTimestamp(lastSubmission))}</td>
@@ -142,6 +153,57 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function showContextPanel(term) {
+  const targetTerm = typeof term === 'string' ? term.trim() : '';
+  if (!targetTerm) return;
+  const contexts = CONTEXT_CACHE.get(targetTerm) || [];
+
+  if (!contextPanelEl || !contextTitleEl || !contextListEl) {
+    const message = contexts.length
+      ? contexts.map((item, idx) => `${idx + 1}. ${item.sentence}`).join('\n')
+      : '暂无语境记录';
+    alert(`「${targetTerm}」的最近语境：\n${message}`);
+    return;
+  }
+
+  CURRENT_CONTEXT_TERM = targetTerm;
+  contextTitleEl.textContent = `「${targetTerm}」最近语境`;
+  contextListEl.innerHTML = '';
+  if (contextEmptyEl) contextEmptyEl.classList.add('hidden');
+
+  const items = contexts.slice(0, 3);
+  if (!items.length) {
+    if (contextEmptyEl) {
+      contextEmptyEl.classList.remove('hidden');
+    } else {
+      contextListEl.innerHTML = '<li class="empty">暂无语境记录</li>';
+    }
+  } else {
+    const html = items.map((item, index) => {
+      const sentence = typeof item?.sentence === 'string' ? item.sentence : '';
+      const createdAt = typeof item?.created_at === 'string' ? item.created_at : '';
+      const timestamp = createdAt ? formatTimestamp(createdAt) : '';
+      const meta = timestamp ? `<div class="context-meta">${escapeHtml(timestamp)}</div>` : '';
+      return `
+        <li>
+          <div class="context-order">${index + 1}.</div>
+          <div class="context-sentence">${escapeHtml(sentence)}</div>
+          ${meta}
+        </li>
+      `;
+    }).join('');
+    contextListEl.innerHTML = html;
+  }
+
+  contextPanelEl.classList.remove('hidden');
+}
+
+function hideContextPanel() {
+  if (!contextPanelEl) return;
+  contextPanelEl.classList.add('hidden');
+  CURRENT_CONTEXT_TERM = '';
+}
+
 async function fetchAllScores() {
   try {
     setProgressStatus('正在加载词汇数据…', 'info');
@@ -153,14 +215,24 @@ async function fetchAllScores() {
     }
     const data = await response.json();
     const scores = Array.isArray(data.scores) ? data.scores : [];
+    CONTEXT_CACHE.clear();
+    scores.forEach((record) => {
+      if (!record || typeof record.term !== 'string') return;
+      const term = record.term;
+      const contexts = Array.isArray(record.recent_contexts) ? record.recent_contexts.slice(0, 3) : [];
+      CONTEXT_CACHE.set(term, contexts);
+    });
     ALL_RECORDS = scores.map((record, idx) => ({ ...record, _order: idx }));
     updateHeaderIndicators();
     renderTable(applyFilters(ALL_RECORDS));
+    if (CURRENT_CONTEXT_TERM) {
+      showContextPanel(CURRENT_CONTEXT_TERM);
+    }
     setProgressStatus(`已加载 ${ALL_RECORDS.length} 个词汇`, 'ok');
   } catch (error) {
     console.error('[Progress] 获取词汇失败', error);
     setProgressStatus(`加载失败：${error.message}`, 'warn');
-    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="5">无法加载词汇数据。</td></tr>';
+    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="6">无法加载词汇数据。</td></tr>';
   }
 }
 
@@ -188,7 +260,12 @@ async function updateWord(term, action) {
       } else {
         ALL_RECORDS.push({ ...data.record, _order: ALL_RECORDS.length });
       }
+      const contexts = Array.isArray(data.record.recent_contexts) ? data.record.recent_contexts.slice(0, 3) : [];
+      CONTEXT_CACHE.set(data.record.term, contexts);
       renderTable(applyFilters(ALL_RECORDS));
+      if (CURRENT_CONTEXT_TERM === data.record.term) {
+        showContextPanel(data.record.term);
+      }
       setProgressStatus(`已更新「${term}」`, 'ok');
     } else {
       await fetchAllScores();
@@ -252,9 +329,19 @@ function updateHeaderIndicators() {
 progressBodyEl.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (!target.classList.contains('mark-btn')) return;
-  const term = target.dataset.term;
-  const action = target.dataset.action;
+  const contextBtn = target.closest('.term-context-btn');
+  if (contextBtn) {
+    const term = contextBtn.dataset.term;
+    if (term) {
+      showContextPanel(term);
+    }
+    return;
+  }
+
+  const markBtn = target.closest('.mark-btn');
+  if (!markBtn) return;
+  const term = markBtn.dataset.term;
+  const action = markBtn.dataset.action;
   if (term && action) {
     updateWord(term, action);
   }
@@ -264,6 +351,10 @@ if (refreshBtn) {
   refreshBtn.addEventListener('click', () => {
     fetchAllScores();
   });
+}
+
+if (contextCloseBtn) {
+  contextCloseBtn.addEventListener('click', hideContextPanel);
 }
 
 fetchAllScores();

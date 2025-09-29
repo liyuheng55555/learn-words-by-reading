@@ -3,6 +3,8 @@
 let VOCABS = [];
 const VARIANT_TO_ORIGINAL = new Map();
 const ORIGINAL_TO_VARIANT = new Map();
+const TERM_CONTEXTS = new Map();
+let CURRENT_ARTICLE_MARKDOWN = '';
 
 const listEl = document.getElementById('list');
 const filterEl = document.getElementById('filter');
@@ -325,10 +327,23 @@ function collectSimilarityPayload(){
   for (const [term, data] of Object.entries(LAST_GRADING_RESULTS)){
     if (!data) continue;
     if (typeof data.similarity === 'number'){
-      results.push({ term, similarity: data.similarity });
+      const context = TERM_CONTEXTS.get(term) || '';
+      results.push({
+        term,
+        similarity: data.similarity,
+        context: context || null
+      });
     }
   }
   return results;
+}
+
+function getCurrentArticleMarkdown(){
+  if (typeof CURRENT_ARTICLE_MARKDOWN === 'string' && CURRENT_ARTICLE_MARKDOWN.trim()) {
+    return CURRENT_ARTICLE_MARKDOWN.trim();
+  }
+  const editorValue = typeof articleEditor?.value === 'string' ? articleEditor.value.trim() : '';
+  return editorValue;
 }
 
 function collectSuggestionCounts(){
@@ -720,6 +735,7 @@ async function handleGenerateArticle(){
 // Process article content and extract vocabulary
 function processArticleContent(content, variantPairs = []) {
   try {
+    CURRENT_ARTICLE_MARKDOWN = typeof content === 'string' ? content : '';
     resetVariantMappings(variantPairs);
     // Convert **markdown** to <strong> HTML tags and preserve paragraph structure
     const formattedContent = convertMarkdownToHtml(content);
@@ -729,6 +745,7 @@ function processArticleContent(content, variantPairs = []) {
 
     // Extract vocabulary from ** marked words
     extractVocabulary(content);
+    updateTermContextsFromArticle();
 
     // Rebuild vocabulary list
     buildList();
@@ -776,6 +793,44 @@ function extractVocabulary(content) {
   }
 
   VOCABS = vocabList;
+}
+
+function updateTermContextsFromArticle() {
+  TERM_CONTEXTS.clear();
+  if (!articleContent) return;
+
+  const paragraphs = articleContent.querySelectorAll('p');
+  paragraphs.forEach(paragraph => {
+    const paragraphText = paragraph.textContent
+      ? paragraph.textContent.replace(/\s+/g, ' ').trim()
+      : '';
+    if (!paragraphText) return;
+
+    const strongElements = paragraph.querySelectorAll('strong');
+    strongElements.forEach(strong => {
+      const variant = strong.textContent ? strong.textContent.trim() : '';
+      if (!variant) return;
+      const originalTerm = getOriginalFromVariant(variant) || variant;
+      if (!originalTerm || TERM_CONTEXTS.has(originalTerm)) return;
+      const sentence = extractSentenceFromContext(paragraphText, variant) || paragraphText;
+      TERM_CONTEXTS.set(originalTerm, sentence);
+    });
+  });
+}
+
+function extractSentenceFromContext(paragraphText, variant) {
+  if (!paragraphText || !variant) return '';
+  const normalizedParagraph = paragraphText.replace(/\s+/g, ' ').trim();
+  const lowerVariant = variant.trim().toLowerCase();
+
+  const sentenceMatches = normalizedParagraph.match(/[^。！？!?\.]+[。！？!?\.]?/g) || [normalizedParagraph];
+  for (const sentence of sentenceMatches) {
+    if (sentence.toLowerCase().includes(lowerVariant)) {
+      return sentence.trim();
+    }
+  }
+
+  return normalizedParagraph;
 }
 
 // Function to find term by id fragment
@@ -840,6 +895,7 @@ if (syncServerBtn){
 
     const base = getScoreApiBase();
     const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
+    const articleMarkdown = getCurrentArticleMarkdown();
     const originalLabel = syncServerBtn.dataset.originalText || syncServerBtn.textContent;
     syncServerBtn.dataset.originalText = originalLabel;
     syncServerBtn.disabled = true;
@@ -852,7 +908,7 @@ if (syncServerBtn){
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ results: payload })
+        body: JSON.stringify({ results: payload, article: articleMarkdown })
       });
 
       if (!response.ok) {
@@ -1274,7 +1330,12 @@ function clampSimilarity(value) {
 
 // Create grading prompt for AI
 function createGradingPrompt(terms, data) {
-  const termsList = terms.map(term => `- 英文词汇: ${term}\n  学生翻译: ${data[term] || '(空白)'}`).join('\n');
+  const termsList = terms.map(term => {
+    const contextRaw = TERM_CONTEXTS.get(term) || '（原文未提供语境）';
+    const context = contextRaw.replace(/\s+/g, ' ').trim();
+    const answer = data[term] && data[term].trim() ? data[term].trim() : '(空白)';
+    return `- 英文词汇: ${term}\n  原文语境: ${context}\n  学生翻译: ${answer}`;
+  }).join('\n');
 
   return `你是一名精通中英文术语的教师，需要判断学生给出的中文翻译与英文术语的语义相似度。请聚焦词义本身，不要贴合特定学科背景或冷僻知识。
 
@@ -1283,6 +1344,8 @@ function createGradingPrompt(terms, data) {
 2. 评估学生答案与标准答案在语义上的相似度，相似度用 0~1 的小数表示：0 代表完全错误，1 代表完全一致。允许保留三位小数。
    - 若学生答案涵盖了主要含义或提供了常见近义词，即使未列出全部释义，也应给予较高分（例如 ≥0.7）。
 3. 如有需要，可给出简短说明（10~25个字），解释主要差异或匹配亮点。
+
+在评估时请结合提供的原文语境理解术语的含义，以该语境为准判断学生翻译的准确度。
 
 评分基准示例：
 - 学生答案「极点」，标准答案「杆；极点；电极」→ 1.0 分（核心含义完全对应）

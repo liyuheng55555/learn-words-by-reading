@@ -55,7 +55,16 @@ CREATE TABLE IF NOT EXISTS word_scores (
   last_submission TEXT,
   correct_count INTEGER NOT NULL DEFAULT 0,
   incorrect_count INTEGER NOT NULL DEFAULT 0
-);`;
+);
+CREATE TABLE IF NOT EXISTS word_contexts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  term TEXT NOT NULL,
+  sentence TEXT NOT NULL,
+  article TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_word_contexts_term_created_at ON word_contexts(term, created_at DESC);
+`;
   await runSqlite(schema);
   await ensureTableColumns();
 }
@@ -81,11 +90,22 @@ function sendText(res, statusCode, text) {
   res.end(text);
 }
 
+function escapeSqlString(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/'/g, "''");
+}
+
 async function getScores() {
   const output = await runSqlite('SELECT term, score, submissions, last_submission, correct_count, incorrect_count FROM word_scores ORDER BY rowid;', { json: true });
   if (!output) return [];
   try {
-    return JSON.parse(output);
+    const records = JSON.parse(output) || [];
+    if (!Array.isArray(records) || !records.length) return [];
+    const contextMap = await fetchRecentContexts(records.map((record) => record.term), 3);
+    return records.map((record) => ({
+      ...record,
+      recent_contexts: contextMap.get(record.term) || []
+    }));
   } catch (error) {
     console.error('Failed to parse sqlite json output:', output, error);
     throw new Error('无法解析数据库内容');
@@ -98,6 +118,116 @@ function computeDelta(similarity) {
   const delta = 4 * (s - 0.5); // s=0 -> -2, s=0.5 -> 0, s=1 -> +2
   // Clamp to avoid runaway values
   return Math.max(-3, Math.min(3, delta));
+}
+
+async function pruneOldContexts(terms, keep = 30) {
+  if (!Array.isArray(terms) || terms.length === 0) return;
+  const unique = Array.from(new Set(terms
+    .map((term) => (typeof term === 'string' ? term.trim() : ''))
+    .filter(Boolean)));
+  if (!unique.length) return;
+
+  const statements = ['BEGIN TRANSACTION;'];
+  const limit = Math.max(1, Number(keep) || 30);
+  for (const term of unique) {
+    const termEscaped = escapeSqlString(term);
+    statements.push(`DELETE FROM word_contexts WHERE term = '${termEscaped}' AND id NOT IN (SELECT id FROM word_contexts WHERE term = '${termEscaped}' ORDER BY created_at DESC, id DESC LIMIT ${limit});`);
+  }
+  statements.push('COMMIT;');
+  await runSqlite(statements.join('\n'));
+}
+
+async function storeWordContexts(results, article) {
+  if (!Array.isArray(results) || results.length === 0) return;
+
+  const timestamp = new Date().toISOString();
+  const fallbackArticle = typeof article === 'string' ? article.trim() : '';
+  const statements = ['BEGIN TRANSACTION;'];
+  let hasInsert = false;
+
+  for (const item of results) {
+    if (!item || typeof item.term !== 'string') continue;
+    const term = item.term.trim();
+    if (!term) continue;
+
+    const contextRaw = typeof item.context === 'string' ? item.context.trim() : '';
+    if (!contextRaw) continue;
+
+    const articleRaw = typeof item.article === 'string' && item.article.trim()
+      ? item.article.trim()
+      : fallbackArticle;
+
+    const termEscaped = escapeSqlString(term);
+    const sentenceEscaped = escapeSqlString(contextRaw);
+    const articleEscaped = articleRaw ? `'${escapeSqlString(articleRaw)}'` : 'NULL';
+
+    statements.push(`INSERT INTO word_contexts(term, sentence, article, created_at) VALUES ('${termEscaped}', '${sentenceEscaped}', ${articleEscaped}, '${timestamp}');`);
+    hasInsert = true;
+  }
+
+  if (!hasInsert) return;
+
+  statements.push('COMMIT;');
+  await runSqlite(statements.join('\n'));
+
+  const affectedTerms = results
+    .map((item) => (item && typeof item.term === 'string' ? item.term.trim() : ''))
+    .filter(Boolean);
+  await pruneOldContexts(affectedTerms, 30);
+}
+
+async function fetchRecentContexts(terms = null, limitPerTerm = 3) {
+  const limit = Math.max(1, Number(limitPerTerm) || 3);
+  let sql = 'SELECT term, sentence, article, created_at FROM word_contexts';
+  let uniqueTerms = [];
+
+  if (Array.isArray(terms) && terms.length) {
+    uniqueTerms = Array.from(new Set(terms
+      .map((term) => (typeof term === 'string' ? term.trim() : ''))
+      .filter(Boolean)));
+    if (!uniqueTerms.length) {
+      return new Map();
+    }
+    const escapedList = uniqueTerms.map((term) => `'${escapeSqlString(term)}'`).join(',');
+    sql += ` WHERE term IN (${escapedList})`;
+  }
+
+  sql += ' ORDER BY created_at DESC, id DESC';
+
+  const limitMultiplier = uniqueTerms.length ? uniqueTerms.length : limit * 50;
+  const fetchLimit = uniqueTerms.length
+    ? Math.max(limit * uniqueTerms.length * 3, limit)
+    : Math.max(limit * limitMultiplier, limit * 20);
+
+  sql += ` LIMIT ${fetchLimit};`;
+
+  const raw = await runSqlite(sql, { json: true });
+  const contexts = new Map();
+  if (!raw) return contexts;
+
+  let rows;
+  try {
+    rows = JSON.parse(raw);
+  } catch (error) {
+    console.error('Failed to parse contexts JSON:', error.message);
+    return contexts;
+  }
+
+  for (const row of rows) {
+    if (!row || typeof row.term !== 'string') continue;
+    const term = row.term;
+    const sentence = typeof row.sentence === 'string' ? row.sentence : '';
+    const article = typeof row.article === 'string' ? row.article : '';
+    const createdAt = typeof row.created_at === 'string' ? row.created_at : null;
+    if (!sentence) continue;
+
+    const list = contexts.get(term) || [];
+    if (list.length >= limit) continue;
+    list.push({ sentence, article, created_at: createdAt });
+    contexts.set(term, list);
+  }
+
+  return contexts;
 }
 
 async function applyScores(results) {
@@ -147,8 +277,21 @@ async function getScoresForTerms(terms) {
       console.error('Failed to parse targeted score query:', error.message);
     }
   }
-  const map = new Map(parsed.map(item => [item.term, item]));
-  return uniqueTerms.map(term => map.get(term)).filter(Boolean);
+  if (!parsed.length) return [];
+
+  const recordMap = new Map(parsed.map(item => [item.term, item]));
+  const contextMap = await fetchRecentContexts(uniqueTerms, 3);
+
+  return uniqueTerms
+    .map(term => {
+      const record = recordMap.get(term);
+      if (!record) return null;
+      return {
+        ...record,
+        recent_contexts: contextMap.get(term) || []
+      };
+    })
+    .filter(Boolean);
 }
 
 async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThreshold = 1) {
@@ -311,11 +454,13 @@ async function handlePostScores(req, res) {
     const raw = Buffer.concat(chunks).toString('utf-8');
     const payload = JSON.parse(raw || '{}');
     const results = Array.isArray(payload.results) ? payload.results : [];
+    const article = typeof payload.article === 'string' ? payload.article : '';
     if (results.length === 0) {
       return sendJson(res, 400, { error: '缺少有效的判题结果数据' });
     }
 
     await applyScores(results);
+    await storeWordContexts(results, article);
     const submittedTerms = results
       .filter(item => item && typeof item.term === 'string')
       .map(item => item.term.trim())

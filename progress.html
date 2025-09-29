@@ -56,10 +56,21 @@
             </tr>
           </thead>
           <tbody id="progress-body">
-            <tr><td class="empty" colspan="5">正在加载词汇数据…</td></tr>
+            <tr><td class="empty" colspan="6">正在加载词汇数据…</td></tr>
           </tbody>
         </table>
       </div>
+
+      <section id="context-panel" class="context-panel hidden" aria-live="polite">
+        <div class="context-panel-header">
+          <h2 id="context-title">原文语境</h2>
+          <button id="context-close" type="button" aria-label="关闭语境面板">✕</button>
+        </div>
+        <div class="context-panel-body">
+          <ol id="context-list"></ol>
+          <div id="context-empty" class="context-empty hidden">暂无语境记录</div>
+        </div>
+      </section>
     </div>
   </main>
 
