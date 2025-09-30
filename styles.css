@@ -832,6 +832,16 @@ button:hover, .btn:hover {
   color: var(--accent-2);
 }
 
+.progress-table th.meaning-col,
+.progress-table td.meaning-cell {
+  white-space: normal;
+}
+
+.progress-table td.meaning-cell {
+  line-height: 1.5;
+  max-width: 360px;
+}
+
 .progress-table tr:last-child td {
   border-bottom: none;
 }

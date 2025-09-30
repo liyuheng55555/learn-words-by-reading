@@ -48,10 +48,14 @@ function applyFilters(records) {
 
   const filtered = records.filter(record => {
     const term = record.term || '';
+    const meaning = typeof record.meaning === 'string' ? record.meaning : '';
     const score = Number(record.score) || 0;
     const submissions = Number(record.submissions) || 0;
 
-    if (q && !term.toLowerCase().includes(q)) return false;
+    if (q) {
+      const haystack = `${term} ${meaning}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     if (hasScoreLimit && score > scoreLimit) return false;
 
     if (status === 'fresh' && submissions > 0) return false;
@@ -73,6 +77,11 @@ function sortRecords(records) {
     switch (field) {
       case 'term': {
         return a.term.localeCompare(b.term, 'en', { sensitivity: 'base' }) * direction;
+      }
+      case 'meaning': {
+        const meaningA = typeof a.meaning === 'string' ? a.meaning : '';
+        const meaningB = typeof b.meaning === 'string' ? b.meaning : '';
+        return meaningA.localeCompare(meaningB, 'zh', { sensitivity: 'base' }) * direction;
       }
       case 'score': {
         const diff = (Number(a.score) || 0) - (Number(b.score) || 0);
@@ -111,7 +120,7 @@ function renderTable(records) {
   if (!progressBodyEl) return;
 
   if (!records.length) {
-    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="6">未找到匹配的词汇。</td></tr>';
+    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="7">未找到匹配的词汇。</td></tr>';
     return;
   }
 
@@ -121,6 +130,7 @@ function renderTable(records) {
     const submissions = Number(record.submissions) || 0;
     const lastSubmission = record.last_submission;
     const order = Number(record._order);
+    const meaning = typeof record.meaning === 'string' && record.meaning.trim() ? record.meaning.trim() : '';
     const contexts = CONTEXT_CACHE.get(term) || [];
     const hasContexts = contexts.length > 0;
     const contextBadge = hasContexts ? ' <span class="context-indicator" title="查看最近语境">语境</span>' : '';
@@ -132,6 +142,7 @@ function renderTable(records) {
       <tr class="${masteredClass}">
         <td>${Number.isFinite(order) ? order + 1 : ''}</td>
         <td>${termButton}</td>
+        <td class="meaning-cell">${escapeHtml(meaning || '—')}</td>
         <td>${formatScore(score)}</td>
         <td>${submissions}</td>
         <td>${escapeHtml(formatTimestamp(lastSubmission))}</td>
@@ -232,7 +243,7 @@ async function fetchAllScores() {
   } catch (error) {
     console.error('[Progress] 获取词汇失败', error);
     setProgressStatus(`加载失败：${error.message}`, 'warn');
-    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="6">无法加载词汇数据。</td></tr>';
+    progressBodyEl.innerHTML = '<tr><td class="empty" colspan="7">无法加载词汇数据。</td></tr>';
   }
 }
 
