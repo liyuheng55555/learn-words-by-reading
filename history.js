@@ -11,6 +11,8 @@ const resultsBodyEl = document.getElementById('history-results-body');
 const openSessionLink = document.getElementById('history-open-session');
 const copyLowBtn = document.getElementById('history-copy-low');
 const resultsHeadEl = document.getElementById('history-results-head');
+const chartCanvas = document.getElementById('history-chart');
+const chartEmptyEl = document.getElementById('history-chart-empty');
 
 const SESSION_CACHE = new Map();
 let CURRENT_SESSION_ID = null;
@@ -18,6 +20,7 @@ let CURRENT_LOW_WORDS = [];
 let CURRENT_SESSION_RESULTS = [];
 let RESULT_SORT_FIELD = 'term';
 let RESULT_SORT_ASC = true;
+let DAILY_STATS = [];
 
 function setHistoryStatus(message, kind = 'info') {
   if (!historyStatusEl) return;
@@ -123,6 +126,31 @@ async function fetchSessions({ autoSelect = false } = {}) {
     console.error('[History] 获取历史记录失败:', error);
     setHistoryStatus(`加载失败：${error.message}`, 'warn');
     sessionListEl.innerHTML = '<li class="history-session-item empty warn">无法加载历史记录。</li>';
+  }
+}
+
+async function fetchDailyStats(days = 7) {
+  try {
+    const base = readScoreApiBase();
+    const endpoint = `${base.replace(/\/$/, '')}/api/stats/daily?days=${encodeURIComponent(days)}`;
+    const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
+    }
+    const data = await response.json();
+    const stats = Array.isArray(data.stats) ? data.stats : [];
+    DAILY_STATS = fillMissingDays(stats, days);
+    if (chartEmptyEl) {
+      chartEmptyEl.classList.toggle('hidden', DAILY_STATS.some(item => item.practiced || item.below_zero || item.above_two));
+    }
+    renderDailyChart(DAILY_STATS);
+  } catch (error) {
+    console.error('[History] 获取每日统计失败:', error);
+    if (chartEmptyEl) {
+      chartEmptyEl.classList.remove('hidden');
+      chartEmptyEl.textContent = `无法加载趋势数据：${error.message}`;
+    }
   }
 }
 
@@ -251,6 +279,120 @@ function renderResultsTable() {
   updateHeaderIndicators();
 }
 
+function getChartContext(canvas) {
+  if (!canvas) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.scale(dpr, dpr);
+  }
+  return ctx;
+}
+
+function renderDailyChart(stats) {
+  if (!chartCanvas) return;
+  const ctx = getChartContext(chartCanvas);
+  if (!ctx) return;
+
+  if (!stats || !stats.length) {
+    ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+    if (chartEmptyEl) chartEmptyEl.classList.remove('hidden');
+    return;
+  }
+
+  const width = chartCanvas.getBoundingClientRect().width;
+  const height = chartCanvas.getBoundingClientRect().height;
+  ctx.clearRect(0, 0, width, height);
+
+  const labels = stats.map(item => item.day);
+  const practiced = stats.map(item => Number(item.practiced) || 0);
+  const below = stats.map(item => Number(item.below_zero) || 0);
+  const above = stats.map(item => Number(item.above_two) || 0);
+
+  const maxValue = Math.max(5, ...practiced, ...below, ...above);
+  const padding = { top: 16, right: 24, bottom: 32, left: 40 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  ctx.strokeStyle = 'rgba(147, 161, 161, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, padding.top + chartHeight);
+  ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+  ctx.stroke();
+
+  const steps = Math.min(4, maxValue);
+  ctx.fillStyle = 'var(--muted)';
+  ctx.font = '12px sans-serif';
+  for (let i = 0; i <= steps; i++) {
+    const value = Math.round((maxValue / steps) * i);
+    const y = padding.top + chartHeight - (chartHeight * (value / maxValue));
+    ctx.fillText(String(value), 6, y + 4);
+    ctx.strokeStyle = 'rgba(147, 161, 161, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + chartWidth, y);
+    ctx.stroke();
+  }
+
+  labels.forEach((label, index) => {
+    const x = padding.left + (chartWidth / Math.max(1, labels.length - 1)) * index;
+    const y = padding.top + chartHeight + 16;
+    ctx.fillStyle = 'var(--muted)';
+    ctx.fillText(label.slice(5), x - 18, y);
+  });
+
+  function drawLine(data, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((value, index) => {
+      const x = padding.left + (chartWidth / Math.max(1, data.length - 1)) * index;
+      const y = padding.top + chartHeight - (chartHeight * (value / maxValue));
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+
+    data.forEach((value, index) => {
+      const x = padding.left + (chartWidth / Math.max(1, data.length - 1)) * index;
+      const y = padding.top + chartHeight - (chartHeight * (value / maxValue));
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  drawLine(practiced, '#268bd2');
+  drawLine(below, '#dc322f');
+  drawLine(above, '#859900');
+}
+
+function fillMissingDays(stats, days = 7) {
+  const today = new Date();
+  const result = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    const dayString = date.toISOString().slice(0, 10);
+    const found = stats.find(item => item.day === dayString);
+    if (found) {
+      result.push(found);
+    } else {
+      result.push({ day: dayString, practiced: 0, below_zero: 0, above_two: 0 });
+    }
+  }
+  return result;
+}
+
 function renderSessionDetail(detail) {
   if (!detailContentEl || !detailEmptyEl) return;
   if (!detail || !detail.session) {
@@ -335,6 +477,7 @@ if (scoreApiInput) {
     if (value) {
       localStorage.setItem('score-api-url', value);
     }
+    fetchDailyStats(7);
   });
 }
 
@@ -373,6 +516,12 @@ if (resultsHeadEl) {
     renderResultsTable();
   });
 }
+
+window.addEventListener('resize', () => {
+  if (DAILY_STATS.length) {
+    renderDailyChart(DAILY_STATS);
+  }
+});
 
 function fallbackCopyText(text) {
   const textarea = document.createElement('textarea');
@@ -422,4 +571,5 @@ if (copyLowBtn) {
 
 // Initialize page
 readScoreApiBase();
+fetchDailyStats(7);
 fetchSessions({ autoSelect: true });

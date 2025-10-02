@@ -132,8 +132,73 @@ main {
 .history-main {
   display: flex;
   justify-content: center;
+  flex-direction: column;
+  gap: 24px;
   padding: 28px 20px 60px;
   background: transparent;
+}
+
+.history-chart-wrap {
+  max-width: 1100px;
+  width: 100%;
+}
+
+.history-chart {
+  padding: 20px 24px;
+}
+
+.history-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.history-chart-legend {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.legend-item {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(38, 139, 210, 0.3);
+}
+
+.legend-practiced {
+  color: var(--accent);
+}
+
+.legend-below {
+  color: var(--warn);
+}
+
+.legend-above {
+  color: var(--ok);
+}
+
+.history-chart-body {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.history-chart-body canvas {
+  width: 100%;
+  height: 280px;
+}
+
+.history-chart-empty {
+  margin-top: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .history-layout {
@@ -926,6 +991,35 @@ button:hover, .btn:hover {
 
 .sync-status.warn {
   color: var(--warn);
+}
+
+.progress-summary {
+  margin: 12px 0 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(38, 139, 210, 0.2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.progress-summary .summary-item {
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-summary .summary-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.progress-summary .summary-value {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 18px;
 }
 
 .server-scores {

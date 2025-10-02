@@ -145,6 +145,7 @@ const STATIC_ROUTES = new Map([
   ['/', 'geo_vocab_fill_in_webpage_english→chinese.html'],
   ['/index.html', 'geo_vocab_fill_in_webpage_english→chinese.html'],
   ['/fill.html', 'geo_vocab_fill_in_webpage_english→chinese.html'],
+  ['/geo_vocab_fill_in_webpage_english→chinese.html', 'geo_vocab_fill_in_webpage_english→chinese.html'],
   ['/history', 'history.html'],
   ['/history.html', 'history.html'],
   ['/progress', 'progress.html'],
@@ -156,11 +157,19 @@ function tryServeStatic(req, res, pathname) {
     return false;
   }
 
+  let safePathname = pathname || '/';
+  try {
+    safePathname = decodeURIComponent(safePathname);
+  } catch (error) {
+    console.warn('Failed to decode pathname', pathname, error.message);
+    return false;
+  }
+
   let relativePath = null;
-  if (STATIC_ROUTES.has(pathname)) {
-    relativePath = STATIC_ROUTES.get(pathname);
-  } else if (!pathname.startsWith('/api/')) {
-    const cleaned = pathname.replace(/\/+/g, '/');
+  if (STATIC_ROUTES.has(safePathname)) {
+    relativePath = STATIC_ROUTES.get(safePathname);
+  } else if (!safePathname.startsWith('/api/')) {
+    const cleaned = safePathname.replace(/\/+/g, '/');
     if (cleaned.includes('..')) {
       return false;
     }
@@ -492,6 +501,28 @@ async function listSessions(limit = 50) {
   }
 }
 
+async function getDailyStats(days = 7) {
+  const windowDays = Math.max(1, Math.min(Number(days) || 7, 31));
+  const sql = `SELECT DATE(last_submission) AS day,
+    COUNT(*) AS practiced,
+    SUM(CASE WHEN score < 0 THEN 1 ELSE 0 END) AS below_zero,
+    SUM(CASE WHEN score >= 2 THEN 1 ELSE 0 END) AS above_two
+  FROM word_scores
+  WHERE last_submission IS NOT NULL
+    AND DATE(last_submission) >= DATE('now', '-' || ${windowDays - 1} || ' day')
+  GROUP BY day
+  ORDER BY day ASC;`;
+  const raw = await runSqlite(sql, { json: true });
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse daily stats:', error.message);
+    return [];
+  }
+}
+
 async function fetchSessionDetail(id) {
   const sessionId = Number(id);
   if (!Number.isInteger(sessionId) || sessionId <= 0) return null;
@@ -780,6 +811,17 @@ async function requestListener(req, res) {
       return sendJson(res, 200, detail);
     } catch (error) {
       console.error('Failed to fetch grading session detail', error);
+      return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+    }
+  }
+
+  if (pathname === '/api/stats/daily' && req.method === 'GET') {
+    try {
+      const days = query && query.days ? Number(query.days) : 7;
+      const stats = await getDailyStats(days);
+      return sendJson(res, 200, { stats });
+    } catch (error) {
+      console.error('Failed to fetch daily stats', error);
       return sendJson(res, 500, { error: error.message || '服务器内部错误' });
     }
   }

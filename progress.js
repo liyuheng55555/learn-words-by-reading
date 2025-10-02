@@ -11,6 +11,7 @@ const contextTitleEl = document.getElementById('context-title');
 const contextListEl = document.getElementById('context-list');
 const contextEmptyEl = document.getElementById('context-empty');
 const contextCloseBtn = document.getElementById('context-close');
+const summaryEl = document.getElementById('progress-summary');
 
 let ALL_RECORDS = [];
 let SORT_FIELD = 'order';
@@ -155,6 +156,46 @@ function renderTable(records) {
   }).join('');
 }
 
+function renderSummary(records) {
+  if (!summaryEl) return;
+
+  const practicedRecords = records.filter(record => Number(record.submissions) > 0);
+  const total = practicedRecords.length;
+  const belowZero = practicedRecords.filter(record => Number(record.score) < 0).length;
+  const zeroToTwo = practicedRecords.filter(record => {
+    const score = Number(record.score) || 0;
+    return score >= 0 && score < 2;
+  }).length;
+  const aboveTwo = practicedRecords.filter(record => {
+    const score = Number(record.score) || 0;
+    return score >= 2 && score < 999;
+  }).length;
+  const mastered = practicedRecords.filter(record => Number(record.score) >= 999).length;
+
+  summaryEl.innerHTML = `
+    <div class="summary-item">
+      <span class="summary-label">练习总数</span>
+      <span class="summary-value">${total}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">分数 &lt; 0</span>
+      <span class="summary-value">${belowZero}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">0–2 分</span>
+      <span class="summary-value">${zeroToTwo}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">≥ 2 分</span>
+      <span class="summary-value">${aboveTwo}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">已掌握</span>
+      <span class="summary-value">${mastered}</span>
+    </div>
+  `;
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -240,6 +281,7 @@ async function fetchAllScores() {
       showContextPanel(CURRENT_CONTEXT_TERM);
     }
     setProgressStatus(`已加载 ${ALL_RECORDS.length} 个词汇`, 'ok');
+    renderSummary(applyFilters(ALL_RECORDS));
   } catch (error) {
     console.error('[Progress] 获取词汇失败', error);
     setProgressStatus(`加载失败：${error.message}`, 'warn');
@@ -288,7 +330,9 @@ async function updateWord(term, action) {
 }
 
 function rerender(){
-  renderTable(applyFilters(ALL_RECORDS));
+  const filtered = applyFilters(ALL_RECORDS);
+  renderTable(filtered);
+  renderSummary(filtered);
 }
 
 progressSearchEl.addEventListener('input', rerender);

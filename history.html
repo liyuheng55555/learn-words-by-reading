@@ -19,6 +19,26 @@
   </nav>
 
   <main class="history-main">
+    <div class="wrap history-chart-wrap">
+      <section class="history-chart card">
+        <div class="history-chart-header">
+          <div>
+            <h1>最近 7 天练习趋势</h1>
+            <p class="history-hint">统计每天练习的词汇数量及不同分数段的词数，帮助跟踪短期进展。</p>
+          </div>
+          <div class="history-chart-legend">
+            <span class="legend-item legend-practiced">练习词数</span>
+            <span class="legend-item legend-below">分数 &lt; 0</span>
+            <span class="legend-item legend-above">分数 ≥ 2</span>
+          </div>
+        </div>
+        <div class="history-chart-body">
+          <canvas id="history-chart" width="800" height="280"></canvas>
+        </div>
+        <div id="history-chart-empty" class="history-chart-empty hidden">暂无最近练习数据。</div>
+      </section>
+    </div>
+
     <div class="wrap history-layout">
       <section class="history-list card">
         <div class="history-list-header">
