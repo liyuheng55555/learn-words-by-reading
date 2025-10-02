@@ -547,7 +547,7 @@ async function copyLowScoreWords() {
     return;
   }
 
-  const text = CURRENT_LOW_WORDS.join('\n');
+  const text = CURRENT_LOW_WORDS.join(', ');
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);

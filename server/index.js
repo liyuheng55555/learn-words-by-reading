@@ -89,6 +89,18 @@ CREATE TABLE IF NOT EXISTS session_results (
   FOREIGN KEY(session_id) REFERENCES grading_sessions(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_session_results_session ON session_results(session_id);
+CREATE TABLE IF NOT EXISTS score_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL,
+  taken_at TEXT NOT NULL,
+  total_practiced INTEGER NOT NULL,
+  below_zero INTEGER NOT NULL,
+  zero_to_two INTEGER NOT NULL,
+  above_two INTEGER NOT NULL,
+  mastered INTEGER NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES grading_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_score_snapshots_taken_at ON score_snapshots(taken_at);
 `;
   await runSqlite(schema);
   await ensureTableColumns();
@@ -480,10 +492,47 @@ async function recordGradingSession(results, article) {
     const parsed = JSON.parse(lookupRaw);
     const record = Array.isArray(parsed) ? parsed[0] : null;
     const sessionId = record ? Number(record.id) : null;
-    return Number.isFinite(sessionId) ? sessionId : null;
+    if (!Number.isFinite(sessionId)) {
+      return null;
+    }
+
+    await createScoreSnapshot(sessionId, timestamp);
+    return sessionId;
   } catch (error) {
     console.error('Failed to parse session lookup result:', error.message);
     return null;
+  }
+}
+
+async function createScoreSnapshot(sessionId, timestamp) {
+  const sql = `SELECT
+    SUM(CASE WHEN submissions > 0 THEN 1 ELSE 0 END) AS practiced,
+    SUM(CASE WHEN submissions > 0 AND score < 0 THEN 1 ELSE 0 END) AS below_zero,
+    SUM(CASE WHEN submissions > 0 AND score >= 0 AND score < 2 THEN 1 ELSE 0 END) AS zero_to_two,
+    SUM(CASE WHEN submissions > 0 AND score >= 2 AND score < 999 THEN 1 ELSE 0 END) AS above_two,
+    SUM(CASE WHEN submissions > 0 AND score >= 999 THEN 1 ELSE 0 END) AS mastered
+  FROM word_scores`;
+  const raw = await runSqlite(sql, { json: true });
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    const stats = Array.isArray(parsed) && parsed.length ? parsed[0] : null;
+    if (!stats) return;
+    const practiced = Number(stats.practiced) || 0;
+    const below = Number(stats.below_zero) || 0;
+    const zeroToTwo = Number(stats.zero_to_two) || 0;
+    const aboveTwo = Number(stats.above_two) || 0;
+    const mastered = Number(stats.mastered) || 0;
+    if (practiced <= 0 && below === 0 && zeroToTwo === 0 && aboveTwo === 0 && mastered === 0) {
+      return;
+    }
+    const takenAt = timestamp || new Date().toISOString();
+
+    const insert = `INSERT INTO score_snapshots(session_id, taken_at, total_practiced, below_zero, zero_to_two, above_two, mastered)
+      VALUES (${sessionId}, '${takenAt}', ${practiced}, ${below}, ${zeroToTwo}, ${aboveTwo}, ${mastered});`;
+    await runSqlite(insert);
+  } catch (error) {
+    console.error('Failed to create score snapshot:', error.message);
   }
 }
 
@@ -503,14 +552,76 @@ async function listSessions(limit = 50) {
 
 async function getDailyStats(days = 7) {
   const windowDays = Math.max(1, Math.min(Number(days) || 7, 31));
-  const sql = `SELECT DATE(last_submission) AS day,
-    COUNT(*) AS practiced,
-    SUM(CASE WHEN score < 0 THEN 1 ELSE 0 END) AS below_zero,
-    SUM(CASE WHEN score >= 2 THEN 1 ELSE 0 END) AS above_two
-  FROM word_scores
-  WHERE last_submission IS NOT NULL
-    AND DATE(last_submission) >= DATE('now', '-' || ${windowDays - 1} || ' day')
-  GROUP BY day
+  const sql = `WITH ranked AS (
+    SELECT DATE(taken_at) AS day,
+           total_practiced,
+           below_zero,
+           zero_to_two,
+           above_two,
+           mastered,
+           ROW_NUMBER() OVER (PARTITION BY DATE(taken_at) ORDER BY taken_at DESC, id DESC) AS rn
+    FROM score_snapshots
+  ), latest AS (
+    SELECT day,
+           total_practiced,
+           below_zero,
+           zero_to_two,
+           above_two,
+           mastered
+    FROM ranked
+    WHERE rn = 1
+  ), baseline AS (
+    SELECT day,
+           total_practiced,
+           below_zero,
+           zero_to_two,
+           above_two,
+           mastered
+    FROM latest
+    WHERE day < DATE('now', '-' || ${windowDays - 1} || ' day')
+    ORDER BY day DESC
+    LIMIT 1
+  ), window AS (
+    SELECT * FROM latest WHERE day >= DATE('now', '-' || ${windowDays - 1} || ' day')
+  ), combined AS (
+    SELECT * FROM baseline
+    UNION ALL
+    SELECT * FROM window
+  ), numbered AS (
+    SELECT day,
+           total_practiced,
+           below_zero,
+           zero_to_two,
+           above_two,
+           mastered,
+           LAG(total_practiced) OVER (ORDER BY day) AS prev_total,
+           LAG(below_zero) OVER (ORDER BY day) AS prev_below,
+           LAG(above_two) OVER (ORDER BY day) AS prev_above
+    FROM combined
+  )
+  SELECT day,
+         CASE
+           WHEN prev_total IS NULL THEN total_practiced
+           WHEN total_practiced - prev_total < 0 THEN 0
+           ELSE total_practiced - prev_total
+         END AS practiced,
+         CASE
+           WHEN prev_below IS NULL THEN below_zero
+           WHEN below_zero - prev_below < 0 THEN 0
+           ELSE below_zero - prev_below
+         END AS below_zero,
+         CASE
+           WHEN prev_above IS NULL THEN above_two
+           WHEN above_two - prev_above < 0 THEN 0
+           ELSE above_two - prev_above
+         END AS above_two,
+         total_practiced,
+         below_zero AS total_below_zero,
+         above_two AS total_above_two,
+         zero_to_two AS total_zero_to_two,
+         mastered AS total_mastered
+  FROM numbered
+  WHERE day >= DATE('now', '-' || ${windowDays - 1} || ' day')
   ORDER BY day ASC;`;
   const raw = await runSqlite(sql, { json: true });
   if (!raw) return [];

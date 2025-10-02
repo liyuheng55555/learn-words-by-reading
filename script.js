@@ -955,6 +955,17 @@ function jumpToInput(term){
   }
 }
 
+function updateFilledState() {
+  VOCABS.forEach((term) => {
+    const input = document.getElementById(makeId(term));
+    if (!input) return;
+    const wrapper = input.closest('.item');
+    if (!wrapper) return;
+    const hasValue = input.value && input.value.trim().length > 0;
+    wrapper.classList.toggle('filled', hasValue);
+  });
+}
+
 function buildList(){
   listEl.innerHTML = '';
   const q = filterEl.value?.trim().toLowerCase();
@@ -972,6 +983,8 @@ function buildList(){
     `;
     listEl.appendChild(div);
   }
+
+  updateFilledState();
 }
 
 // Initialize
@@ -1026,12 +1039,14 @@ function fill(data){
     const el = document.getElementById(makeId(term));
     if (el && term in data) el.value = data[term] || '';
   }
+  updateFilledState();
 }
 
 function persistAnswers(){
   try {
     const data = gather();
     localStorage.setItem(KEY, JSON.stringify(data));
+    updateFilledState();
   } catch (error) {
     console.warn('[Persist Answers] 保存失败:', error);
   }
@@ -1056,6 +1071,7 @@ listEl.addEventListener('input', (event) => {
   const target = event.target;
   if (target instanceof HTMLInputElement && target.dataset.term) {
     schedulePersistAnswers();
+    updateFilledState();
   }
 });
 
@@ -1065,6 +1081,7 @@ document.getElementById('clear').addEventListener('click', ()=>{
     if (el) el.value = '';
   }
   persistAnswers();
+  updateFilledState();
   toast('已清空输入', 'warn');
 });
 

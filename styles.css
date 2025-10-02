@@ -824,6 +824,11 @@ button:hover, .btn:hover {
   transition: border-color 0.2s ease;
 }
 
+.item.filled input {
+  background: rgba(42, 161, 152, 0.12);
+  border-color: rgba(42, 161, 152, 0.6);
+}
+
 .item input:focus {
   border-color: var(--accent);
   outline: none;
