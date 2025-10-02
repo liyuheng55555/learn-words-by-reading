@@ -8,6 +8,9 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'word_scores.db');
 const MIN_SCORE = -4;
+const STRICT_THRESHOLD = 0.85;
+const PARTIAL_THRESHOLD = 0.6;
+const PUBLIC_ROOT = path.join(__dirname, '..');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -65,6 +68,27 @@ CREATE TABLE IF NOT EXISTS word_contexts (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_word_contexts_term_created_at ON word_contexts(term, created_at DESC);
+CREATE TABLE IF NOT EXISTS grading_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submitted_at TEXT NOT NULL,
+  article TEXT,
+  total_terms INTEGER NOT NULL DEFAULT 0,
+  correct_terms INTEGER NOT NULL DEFAULT 0,
+  partial_terms INTEGER NOT NULL DEFAULT 0,
+  incorrect_terms INTEGER NOT NULL DEFAULT 0,
+  avg_similarity REAL
+);
+CREATE TABLE IF NOT EXISTS session_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL,
+  term TEXT NOT NULL,
+  similarity REAL,
+  standard_answer TEXT,
+  explanation TEXT,
+  context TEXT,
+  FOREIGN KEY(session_id) REFERENCES grading_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_results_session ON session_results(session_id);
 `;
   await runSqlite(schema);
   await ensureTableColumns();
@@ -89,6 +113,102 @@ function sendText(res, statusCode, text) {
     'Access-Control-Allow-Headers': 'Content-Type'
   });
   res.end(text);
+}
+
+function getContentType(ext) {
+  switch ((ext || '').toLowerCase()) {
+    case '.html':
+      return 'text/html; charset=utf-8';
+    case '.js':
+      return 'application/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.ico':
+      return 'image/x-icon';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+const STATIC_ROUTES = new Map([
+  ['/', 'geo_vocab_fill_in_webpage_english→chinese.html'],
+  ['/index.html', 'geo_vocab_fill_in_webpage_english→chinese.html'],
+  ['/fill.html', 'geo_vocab_fill_in_webpage_english→chinese.html'],
+  ['/history', 'history.html'],
+  ['/history.html', 'history.html'],
+  ['/progress', 'progress.html'],
+  ['/progress.html', 'progress.html']
+]);
+
+function tryServeStatic(req, res, pathname) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return false;
+  }
+
+  let relativePath = null;
+  if (STATIC_ROUTES.has(pathname)) {
+    relativePath = STATIC_ROUTES.get(pathname);
+  } else if (!pathname.startsWith('/api/')) {
+    const cleaned = pathname.replace(/\/+/g, '/');
+    if (cleaned.includes('..')) {
+      return false;
+    }
+    relativePath = cleaned === '/' ? STATIC_ROUTES.get('/') : cleaned.slice(1);
+  }
+
+  if (!relativePath) {
+    return false;
+  }
+
+  const fullPath = path.join(PUBLIC_ROOT, relativePath);
+  const resolved = path.resolve(fullPath);
+  if (!resolved.startsWith(PUBLIC_ROOT)) {
+    return false;
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch (error) {
+    return false;
+  }
+
+  if (stat.isDirectory()) {
+    return false;
+  }
+
+  const contentType = getContentType(path.extname(resolved));
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+
+  const stream = fs.createReadStream(resolved);
+  stream.on('error', (error) => {
+    console.error('Failed to stream static file', error.message);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    }
+    res.end('Internal Server Error');
+  });
+  stream.pipe(res);
+  return true;
 }
 
 function escapeSqlString(value) {
@@ -254,6 +374,156 @@ async function applyScores(results) {
   await runSqlite(statements.join('\n'));
 }
 
+function normalizeResultItem(item) {
+  if (!item || typeof item.term !== 'string') {
+    return null;
+  }
+  const term = item.term.trim();
+  if (!term) return null;
+  const similarityRaw = Number(item.similarity);
+  const similarity = Number.isFinite(similarityRaw) ? similarityRaw : null;
+  const standardAnswer = typeof item.standard_answer === 'string'
+    ? item.standard_answer
+    : (typeof item.standardAnswer === 'string' ? item.standardAnswer : null);
+  const explanation = typeof item.explanation === 'string'
+    ? item.explanation
+    : (typeof item.detail === 'string' ? item.detail : null);
+  const context = typeof item.context === 'string' ? item.context : null;
+  return { term, similarity, standardAnswer, explanation, context };
+}
+
+async function recordGradingSession(results, article) {
+  if (!Array.isArray(results) || results.length === 0) {
+    return null;
+  }
+
+  const normalized = [];
+  let total = 0;
+  let correct = 0;
+  let partial = 0;
+  let incorrect = 0;
+  let similaritySum = 0;
+  let similarityCount = 0;
+
+  for (const item of results) {
+    const normalizedItem = normalizeResultItem(item);
+    if (!normalizedItem) continue;
+    total += 1;
+
+    if (normalizedItem.similarity === null) {
+      incorrect += 1;
+    } else if (normalizedItem.similarity >= STRICT_THRESHOLD) {
+      correct += 1;
+      similaritySum += normalizedItem.similarity;
+      similarityCount += 1;
+    } else if (normalizedItem.similarity >= PARTIAL_THRESHOLD) {
+      partial += 1;
+      similaritySum += normalizedItem.similarity;
+      similarityCount += 1;
+    } else {
+      incorrect += 1;
+      similaritySum += normalizedItem.similarity;
+      similarityCount += 1;
+    }
+
+    normalized.push(normalizedItem);
+  }
+
+  if (!normalized.length) {
+    return null;
+  }
+
+  const timestamp = new Date().toISOString();
+  const avgSimilarity = similarityCount > 0 ? similaritySum / similarityCount : null;
+  const articleSql = article && typeof article === 'string' && article.trim()
+    ? `'${escapeSqlString(article)}'`
+    : 'NULL';
+  const avgSql = Number.isFinite(avgSimilarity) ? avgSimilarity.toFixed(6) : 'NULL';
+  const totalTerms = total;
+
+  const statements = ['BEGIN TRANSACTION;'];
+  statements.push(`INSERT INTO grading_sessions(submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity) VALUES ('${timestamp}', ${articleSql}, ${totalTerms}, ${correct}, ${partial}, ${incorrect}, ${avgSql});`);
+
+  const sessionIdSelector = `(SELECT id FROM grading_sessions WHERE submitted_at = '${timestamp}' ORDER BY id DESC LIMIT 1)`;
+
+  for (const entry of normalized) {
+    const termEscaped = escapeSqlString(entry.term);
+    const similaritySql = entry.similarity === null ? 'NULL' : entry.similarity.toFixed(6);
+    const standardSql = entry.standardAnswer && entry.standardAnswer.trim()
+      ? `'${escapeSqlString(entry.standardAnswer)}'`
+      : 'NULL';
+    const explanationSql = entry.explanation && entry.explanation.trim()
+      ? `'${escapeSqlString(entry.explanation)}'`
+      : 'NULL';
+    const contextSql = entry.context && entry.context.trim()
+      ? `'${escapeSqlString(entry.context)}'`
+      : 'NULL';
+
+    statements.push(`INSERT INTO session_results(session_id, term, similarity, standard_answer, explanation, context) VALUES (${sessionIdSelector}, '${termEscaped}', ${similaritySql}, ${standardSql}, ${explanationSql}, ${contextSql});`);
+  }
+
+  statements.push('COMMIT;');
+  await runSqlite(statements.join('\n'));
+
+  const lookupRaw = await runSqlite(`SELECT id FROM grading_sessions WHERE submitted_at = '${timestamp}' ORDER BY id DESC LIMIT 1;`, { json: true });
+  if (!lookupRaw) return null;
+  try {
+    const parsed = JSON.parse(lookupRaw);
+    const record = Array.isArray(parsed) ? parsed[0] : null;
+    const sessionId = record ? Number(record.id) : null;
+    return Number.isFinite(sessionId) ? sessionId : null;
+  } catch (error) {
+    console.error('Failed to parse session lookup result:', error.message);
+    return null;
+  }
+}
+
+async function listSessions(limit = 50) {
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+  const sql = `SELECT id, submitted_at, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity FROM grading_sessions ORDER BY submitted_at DESC, id DESC LIMIT ${cappedLimit};`;
+  const raw = await runSqlite(sql, { json: true });
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse session list:', error.message);
+    return [];
+  }
+}
+
+async function fetchSessionDetail(id) {
+  const sessionId = Number(id);
+  if (!Number.isInteger(sessionId) || sessionId <= 0) return null;
+
+  const sessionRaw = await runSqlite(`SELECT id, submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity FROM grading_sessions WHERE id = ${sessionId} LIMIT 1;`, { json: true });
+  if (!sessionRaw) return null;
+  let sessionRecord;
+  try {
+    const parsed = JSON.parse(sessionRaw);
+    sessionRecord = Array.isArray(parsed) ? parsed[0] : null;
+  } catch (error) {
+    console.error('Failed to parse session detail:', error.message);
+    return null;
+  }
+  if (!sessionRecord) return null;
+
+  const resultsRaw = await runSqlite(`SELECT term, similarity, standard_answer, explanation, context FROM session_results WHERE session_id = ${sessionId} ORDER BY term COLLATE NOCASE;`, { json: true });
+  let results = [];
+  if (resultsRaw) {
+    try {
+      const parsed = JSON.parse(resultsRaw);
+      if (Array.isArray(parsed)) {
+        results = parsed;
+      }
+    } catch (error) {
+      console.error('Failed to parse session results:', error.message);
+    }
+  }
+
+  return { session: sessionRecord, results };
+}
+
 async function getScoresForTerms(terms) {
   if (!terms || !terms.length) return [];
   const uniqueTerms = [];
@@ -403,12 +673,13 @@ async function handlePostScores(req, res) {
 
     await applyScores(results);
     await storeWordContexts(results, article);
+    const sessionId = await recordGradingSession(results, article);
     const submittedTerms = results
       .filter(item => item && typeof item.term === 'string')
       .map(item => item.term.trim())
       .filter(Boolean);
     const scores = await getScoresForTerms(submittedTerms);
-    return sendJson(res, 200, { updated: submittedTerms.length, scores });
+    return sendJson(res, 200, { updated: submittedTerms.length, scores, session_id: sessionId });
   } catch (error) {
     console.error('Failed to process POST /api/word-scores', error);
     return sendJson(res, 500, { error: error.message || '服务器内部错误' });
@@ -455,7 +726,7 @@ async function handleWordStatus(req, res) {
 }
 
 async function requestListener(req, res) {
-  const { pathname } = url.parse(req.url, true);
+  const { pathname, query } = url.parse(req.url, true);
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -464,6 +735,10 @@ async function requestListener(req, res) {
       'Access-Control-Allow-Headers': 'Content-Type'
     });
     return res.end();
+  }
+
+  if (tryServeStatic(req, res, pathname || '/')) {
+    return;
   }
 
   if (pathname === '/api/word-scores' && req.method === 'GET') {
@@ -478,6 +753,35 @@ async function requestListener(req, res) {
 
   if (pathname === '/api/word-scores' && req.method === 'POST') {
     return handlePostScores(req, res);
+  }
+
+  if (pathname === '/api/sessions' && req.method === 'GET') {
+    try {
+      const limit = query && query.limit ? Number(query.limit) : 50;
+      const sessions = await listSessions(limit);
+      return sendJson(res, 200, { sessions });
+    } catch (error) {
+      console.error('Failed to list grading sessions', error);
+      return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+    }
+  }
+
+  if (pathname.startsWith('/api/sessions/') && req.method === 'GET') {
+    const idPart = pathname.replace('/api/sessions/', '').trim();
+    const id = Number(idPart);
+    if (!Number.isInteger(id) || id <= 0) {
+      return sendJson(res, 400, { error: '无效的历史记录ID' });
+    }
+    try {
+      const detail = await fetchSessionDetail(id);
+      if (!detail) {
+        return sendJson(res, 404, { error: '未找到对应的历史记录' });
+      }
+      return sendJson(res, 200, detail);
+    } catch (error) {
+      console.error('Failed to fetch grading session detail', error);
+      return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+    }
   }
 
   if (pathname === '/api/word-suggestions' && req.method === 'GET') {

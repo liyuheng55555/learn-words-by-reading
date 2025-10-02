@@ -292,7 +292,12 @@ function rerender(){
 }
 
 progressSearchEl.addEventListener('input', rerender);
-scoreFilterEl.addEventListener('input', rerender);
+scoreFilterEl.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    rerender();
+  }
+});
 statusFilterEl.addEventListener('change', rerender);
 
 if (tableHeaderEl) {

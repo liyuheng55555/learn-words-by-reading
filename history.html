@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>做题历史 · 阅读学单词</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="history-page">
+  <nav class="top-nav">
+    <div class="wrap nav-inner">
+      <a class="nav-brand" href="geo_vocab_fill_in_webpage_english→chinese.html">阅读学单词</a>
+      <div class="nav-links">
+        <a class="nav-item" href="geo_vocab_fill_in_webpage_english→chinese.html">填空练习</a>
+        <a class="nav-item active" href="history.html">做题历史</a>
+        <a class="nav-item" href="progress.html">词汇掌握</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="history-main">
+    <div class="wrap history-layout">
+      <section class="history-list card">
+        <div class="history-list-header">
+          <div>
+            <h1>做题历史</h1>
+            <p class="history-hint">查看每次判题记录，快速跳转到填空页面复盘。</p>
+          </div>
+          <div class="history-actions">
+            <label class="history-api-label">
+              服务器
+              <input id="history-score-api" type="text" placeholder="http://localhost:4000" />
+            </label>
+            <button id="history-refresh" class="sync-btn">刷新</button>
+          </div>
+        </div>
+        <div id="history-status" class="sync-status">正在载入历史记录…</div>
+        <ul id="history-session-list" class="history-session-list"></ul>
+      </section>
+
+      <section class="history-detail card">
+        <div id="history-detail-empty" class="history-empty">请选择左侧的一次记录，查看详情。</div>
+        <div id="history-detail-content" class="hidden">
+          <div class="history-detail-header">
+            <div>
+              <h2 id="history-detail-title">记录详情</h2>
+              <div id="history-detail-meta" class="history-detail-meta"></div>
+            </div>
+            <div class="history-detail-actions">
+              <button id="history-copy-low" class="ai-btn secondary" type="button" disabled>复制 ≤0.5 词</button>
+              <a id="history-open-session" class="ai-btn" target="_blank" rel="noopener">在填空页面打开</a>
+            </div>
+          </div>
+          <section class="history-article">
+            <h3>原文文章</h3>
+            <div id="history-article" class="history-article-content"></div>
+          </section>
+          <section class="history-results">
+            <h3>判题结果摘要</h3>
+            <table>
+              <thead id="history-results-head">
+                <tr>
+                  <th data-sort="term" class="sortable">词汇</th>
+                  <th data-sort="similarity" class="sortable">相似度</th>
+                  <th data-sort="standard" class="sortable">标准答案</th>
+                  <th data-sort="explanation" class="sortable">说明</th>
+                </tr>
+              </thead>
+              <tbody id="history-results-body"></tbody>
+            </table>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="history.js"></script>
+</body>
+</html>

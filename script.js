@@ -331,7 +331,9 @@ function collectSimilarityPayload(){
       results.push({
         term,
         similarity: data.similarity,
-        context: context || null
+        context: context || null,
+        standard_answer: data.standardAnswer ? String(data.standardAnswer) : null,
+        explanation: data.explanation ? String(data.explanation) : null
       });
     }
   }
@@ -492,10 +494,8 @@ function shuffleWords(list){
 }
 
 function createArticlePrompt(words){
-  const wordGoal = DEFAULT_ARTICLE_WORD_GOAL;
-  const paragraphCount = DEFAULT_ARTICLE_PARAGRAPH_COUNT;
   const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
-  return `请写一篇面向英语学习者的英文短文，使用 Markdown 段落格式（不要添加标题、前缀说明或代码块）。要求：\n- 分成 ${paragraphCount} 个段落，总字数约 ${wordGoal} 词。\n- 下列词汇顺序已随机排列，你可以按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。（可根据语境调整大小写、时态或语态。）\n- 文章需自然流畅，可加入背景、例子或解释，确保所有词汇融入语义。\n\n请仅输出文章正文，保留 Markdown 标记，不要额外添加说明或JSON。\n\n目标词汇（顺序随机）：\n${bulletList}`;
+  return `请为英语学习者写一篇英文短文，使用 Markdown 段落格式（可自行分段，但不要添加标题、前言或代码块）。要求：\n- 下列词汇顺序已随机排列，可按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。\n- 不要对除了目标词汇以外的任何词使用粗体标记。\n- 尽量保证每个句子中最多只出现一个目标词汇，使语义自然流畅，可根据语境调整词形。\n- 可加入背景介绍、例子或解释，帮助读者理解词汇含义。\n\n请仅输出文章正文，保留 Markdown 标记，不要额外添加说明或 JSON。\n\n目标词汇（顺序随机）：\n${bulletList}`;
 }
 
 function createVariantMappingPrompt(article, words){
@@ -920,8 +920,10 @@ if (syncServerBtn){
       const scores = Array.isArray(data.scores) ? data.scores : [];
       renderServerScores(scores);
       const updatedCount = data.updated ?? payload.length;
-      setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇`, 'ok');
-      toast('服务器词表已更新 ✓', 'ok');
+      const sessionId = data.session_id;
+      const sessionNote = sessionId ? `（历史记录 #${sessionId} 已生成）` : '';
+      setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇${sessionNote}`, 'ok');
+      toast(sessionId ? `同步完成！历史记录 #${sessionId}` : '服务器词表已更新 ✓', 'ok');
       localStorage.setItem('score-api-url', base);
     } catch (error) {
       console.error('[Sync Scores] 同步失败:', error);
@@ -1447,7 +1449,8 @@ function parseGradingResponse(aiResponse, terms) {
 }
 
 // Display grading results
-function displayGradingResults(results, totalCount) {
+function displayGradingResults(results, totalCount, options = {}) {
+  const { suppressToast = false } = options || {};
   LAST_GRADING_RESULTS = results || {};
   const scoreValues = Object.values(results)
     .map(r => (typeof r.similarity === 'number' ? r.similarity : null))
@@ -1546,7 +1549,9 @@ function displayGradingResults(results, totalCount) {
   aiResultsEl.style.display = 'block';
   aiConfigEl.style.display = 'none';
 
-  toast(`判题完成！平均相似度 ${avgSimilarity.toFixed(2)}`, 'ok');
+  if (!suppressToast) {
+    toast(`判题完成！平均相似度 ${avgSimilarity.toFixed(2)}`, 'ok');
+  }
 }
 
 // Clear previous grading results
@@ -1617,3 +1622,99 @@ async function checkAIIdentityForDisplay(apiUrl, apiKey, model = 'gpt-3.5-turbo'
 }
 
 // No auto-initialization needed for AI identity check
+
+async function loadSessionReplayFromServer(sessionIdRaw) {
+  const sessionId = Number(sessionIdRaw);
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    setSyncStatus(`无法识别的历史记录编号：${sessionIdRaw}`, 'warn');
+    return;
+  }
+
+  const base = getScoreApiBase();
+  if (!base) {
+    setSyncStatus('请先配置服务器地址再加载历史记录。', 'warn');
+    return;
+  }
+
+  const endpoint = `${base.replace(/\/$/, '')}/api/sessions/${sessionId}`;
+  setSyncStatus(`正在加载历史记录 #${sessionId}…`, 'info');
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
+    }
+
+    const data = await response.json();
+    const session = data?.session || {};
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const article = typeof session.article === 'string' ? session.article : '';
+
+    if (typeof CURRENT_ARTICLE_MARKDOWN !== 'undefined') {
+      CURRENT_ARTICLE_MARKDOWN = article;
+    }
+    if (articleEditor) {
+      articleEditor.value = article;
+    }
+    processArticleContent(article || '', []);
+    switchToViewMode();
+
+    const resultsMap = {};
+    results.forEach((item) => {
+      if (!item || typeof item.term !== 'string') return;
+      const term = item.term.trim();
+      if (!term) return;
+      const similarity = typeof item.similarity === 'number' ? item.similarity : Number(item.similarity);
+      const standardAnswer = item.standard_answer || item.standardAnswer || null;
+      const explanation = item.explanation || null;
+      resultsMap[term] = {
+        similarity: Number.isFinite(similarity) ? similarity : null,
+        standardAnswer,
+        explanation
+      };
+
+      if (item.context && TERM_CONTEXTS) {
+        TERM_CONTEXTS.set(term, item.context);
+      }
+    });
+
+    if (Object.keys(resultsMap).length) {
+      displayGradingResults(resultsMap, session.total_terms || results.length, { suppressToast: true });
+    } else {
+      clearGradingResults();
+      aiResultsEl.style.display = 'none';
+    }
+
+    if (scoreSummaryEl) {
+      const submittedAt = session.submitted_at ? new Date(session.submitted_at) : null;
+      const avg = typeof session.avg_similarity === 'number' ? session.avg_similarity : Number(session.avg_similarity);
+      const fragments = [];
+      if (submittedAt && !Number.isNaN(submittedAt.getTime())) {
+        fragments.push(`提交时间：${submittedAt.toLocaleString()}`);
+      }
+      fragments.push(`总词数：${session.total_terms ?? results.length}`);
+      if (Number.isFinite(avg)) {
+        fragments.push(`平均相似度：${avg.toFixed(2)}`);
+      }
+      fragments.push(`正确 / 部分正确 / 错误：${session.correct_terms ?? 0} / ${session.partial_terms ?? 0} / ${session.incorrect_terms ?? 0}`);
+      scoreSummaryEl.insertAdjacentHTML('beforeend', `<div class="score-line history-note">${fragments.join(' ｜ ')}</div>`);
+    }
+
+    aiResultsEl.style.display = 'block';
+    aiConfigEl.style.display = 'none';
+    setSyncStatus(`已加载历史记录 #${sessionId}，如需重新练习可直接编辑文章。`, 'ok');
+    document.body.classList.add('replay-mode');
+  } catch (error) {
+    console.error('[History Replay] 加载历史记录失败:', error);
+    setSyncStatus(`加载历史记录失败：${error.message}`, 'warn');
+    toast('加载历史记录失败：' + error.message, 'warn');
+  }
+}
+
+const sessionIdFromUrl = new URLSearchParams(window.location.search).get('session');
+if (sessionIdFromUrl) {
+  loadSessionReplayFromServer(sessionIdFromUrl);
+}
