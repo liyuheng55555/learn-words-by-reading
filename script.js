@@ -33,6 +33,7 @@ const practicedCountInput = document.getElementById('practiced-count');
 const totalCountInput = document.getElementById('total-count');
 const masteryThresholdInput = document.getElementById('mastery-threshold');
 const autoFillWordsBtn = document.getElementById('auto-fill-words');
+const SERVER_SCORE_CACHE = new Map();
 
 if (syncServerBtn && !syncServerBtn.dataset.originalText) {
   syncServerBtn.dataset.originalText = syncServerBtn.textContent;
@@ -40,6 +41,7 @@ if (syncServerBtn && !syncServerBtn.dataset.originalText) {
 
 renderServerScores([]);
 setSyncStatus('', 'info');
+fetchServerScores({ quiet: true });
 
 const DEFAULT_ARTICLE_WORD_GOAL = 220;
 const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
@@ -286,8 +288,10 @@ function escapeHtml(str){
 
 function renderServerScores(scores){
   if (!serverScoresEl) return;
+  SERVER_SCORE_CACHE.clear();
   if (!scores || !scores.length){
     serverScoresEl.innerHTML = '<div class="empty">服务器暂无词汇记录。</div>';
+    updateScoreBadges();
     return;
   }
 
@@ -296,6 +300,9 @@ function renderServerScores(scores){
     const val = Number(score);
     const displayScore = Number.isFinite(val) ? val.toFixed(2) : '0.00';
     const submissionCount = Number.isFinite(Number(submissions)) ? Number(submissions) : 0;
+    if (typeof term === 'string') {
+      SERVER_SCORE_CACHE.set(term.trim(), Number.isFinite(val) ? val : null);
+    }
     let displayTime = '-';
     if (lastSubmission) {
       const date = new Date(lastSubmission);
@@ -311,6 +318,8 @@ function renderServerScores(scores){
       <tbody>${rows}</tbody>
     </table>
   `;
+
+  updateScoreBadges();
 }
 
 function getScoreApiBase(){
@@ -494,8 +503,8 @@ function shuffleWords(list){
 }
 
 function createArticlePrompt(words){
-  const bulletList = words.map((w, idx) => `${idx + 1}. ${w}`).join('\n');
-  return `请为英语学习者写一篇英文短文，使用 Markdown 段落格式（可自行分段，但不要添加标题、前言或代码块）。要求：\n- 下列词汇顺序已随机排列，可按任意顺序安排内容，但每个词至少出现一次，并使用 Markdown 粗体 **word** 形式标注。\n- 不要对除了目标词汇以外的任何词使用粗体标记。\n- 尽量保证每个句子中最多只出现一个目标词汇，使语义自然流畅，可根据语境调整词形。\n- 可加入背景介绍、例子或解释，帮助读者理解词汇含义。\n\n请仅输出文章正文，保留 Markdown 标记，不要额外添加说明或 JSON。\n\n目标词汇（顺序随机）：\n${bulletList}`;
+  const wordList = words.join('\n\n');
+  return `请为英语学习者写一篇英文短文，使用 Markdown 段落格式（可自行分段，但不要添加标题、前言或代码块）。严格遵守以下规则：\n\n1）词汇使用与标注\n\n仅对目标词加粗，形式为 **word**；除目标词外不得使用粗体。\n\n每个目标词至少出现一次；可按语境变化词形，加粗时使用变化后的词形。\n\n每个句子最多出现一个目标词，不得在同一句使用两个或以上目标词；避免用并列或列表把多个目标词放在同一句（如 “X and Y” 或 “X, Y, and Z”）。\n\n2）语义分散，避免“抱团”\n\n不要把同义、近义、反义、同词根或同一语义场的目标词放在相邻两句，二者之间至少间隔 ≥2 句再出现。\n\n若某目标词可与另一目标词形成并列形容（如 tall 与 huge），只在一句中使用其中一个，另一个放到新的句子与不同语境中。\n\n避免排比、清单或口号式堆砌句式；整体上让目标词在不同场景中分散出现。\n\n3）用语境暗示含义，禁止直接下定义\n\n禁止使用 “X is/means/refers to/also called/defined as …” 等定义句；禁止在目标词所在句子用括号、破折号、同位语或 “i.e./such as/for example” 来给出显然的同义词或解释。\n\n不要给出直译或中文释义；不写“也就是/即/意思是/意味着”等提示性短语。\n\n通过情境、动作、结果或对话来间接表达含义，使读者依靠上下文理解，而非靠明示解释。\n\n4）文体与结构\n\n句子自然简洁，适度分段；尽量避免重复句式和模板化表达。\n\n当目标词很多时，优先使用短句与多段来满足“每句最多一个目标词”的约束。\n\n5）输出要求\n\n仅输出文章正文，保留 Markdown 标记；不要添加任何额外说明、标题、列表注释或 JSON。\n\n目标词汇（顺序随机）：\n\n${wordList}`;
 }
 
 function createVariantMappingPrompt(article, words){
@@ -722,6 +731,8 @@ async function handleGenerateArticle(){
       setGeneratorStatus('AI文章生成完成，词汇与词形均已覆盖 ✓', 'ok');
       toast('文章生成成功并包含全部目标词汇！', 'ok');
     }
+
+    await fetchServerScores({ quiet: true });
   } catch (error) {
     console.error('[Article Generator] 生成文章失败:', error);
     setGeneratorStatus(`生成失败：${error.message}`, 'warn');
@@ -925,6 +936,7 @@ if (syncServerBtn){
       setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇${sessionNote}`, 'ok');
       toast(sessionId ? `同步完成！历史记录 #${sessionId}` : '服务器词表已更新 ✓', 'ok');
       localStorage.setItem('score-api-url', base);
+      await fetchServerScores({ quiet: true });
     } catch (error) {
       console.error('[Sync Scores] 同步失败:', error);
       setSyncStatus(`同步失败：${error.message}`, 'warn');
@@ -966,6 +978,22 @@ function updateFilledState() {
   });
 }
 
+function updateScoreBadges() {
+  if (!listEl) return;
+  const badges = listEl.querySelectorAll('.score-badge');
+  badges.forEach((badge) => {
+    const term = badge.dataset.termScore;
+    const value = term && SERVER_SCORE_CACHE.has(term) ? SERVER_SCORE_CACHE.get(term) : null;
+    if (typeof value === 'number') {
+      badge.textContent = value.toFixed(2);
+      badge.classList.add('score-known');
+    } else {
+      badge.textContent = '—';
+      badge.classList.remove('score-known');
+    }
+  });
+}
+
 function buildList(){
   listEl.innerHTML = '';
   const q = filterEl.value?.trim().toLowerCase();
@@ -974,9 +1002,12 @@ function buildList(){
     const id = makeId(term);
     const div = document.createElement('div');
     div.className = 'item';
+    const rawScore = SERVER_SCORE_CACHE.has(term) ? SERVER_SCORE_CACHE.get(term) : null;
+    const scoreDisplay = typeof rawScore === 'number' ? rawScore.toFixed(2) : '—';
     div.innerHTML = `
       <div class="term" data-term="${term}">
         <span>${term}</span>
+        <span class="score-badge" data-term-score="${term}">${scoreDisplay}</span>
         <span class="jump" data-term="${term}">跳到文中</span>
       </div>
       <input aria-label="${term} 中文意思" placeholder="中文意思…" id="${id}" data-term="${term}" />
@@ -985,6 +1016,7 @@ function buildList(){
   }
 
   updateFilledState();
+  updateScoreBadges();
 }
 
 // Initialize

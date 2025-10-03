@@ -797,6 +797,24 @@ button:hover, .btn:hover {
   user-select: none;
 }
 
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(38, 139, 210, 0.12);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.score-badge.score-known {
+  background: rgba(38, 139, 210, 0.18);
+  color: var(--accent);
+}
+
 .term:hover {
   color: var(--accent-2);
 }
