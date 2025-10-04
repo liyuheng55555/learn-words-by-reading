@@ -1,3 +1,6 @@
+import { escapeHtml } from '../utils/html.js';
+import { fetchJson } from '../services/http.js';
+
 const API_BASE = localStorage.getItem('score-api-url') || 'http://localhost:4000';
 const progressStatusEl = document.getElementById('progress-status');
 const progressBodyEl = document.getElementById('progress-body');
@@ -196,15 +199,6 @@ function renderSummary(records) {
   `;
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function showContextPanel(term) {
   const targetTerm = typeof term === 'string' ? term.trim() : '';
   if (!targetTerm) return;
@@ -260,13 +254,8 @@ async function fetchAllScores() {
   try {
     setProgressStatus('正在加载词汇数据…', 'info');
     const endpoint = `${API_BASE.replace(/\/$/, '')}/api/word-scores`;
-    const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    const scores = Array.isArray(data.scores) ? data.scores : [];
+    const data = await fetchJson(endpoint);
+    const scores = Array.isArray(data?.scores) ? data.scores : [];
     CONTEXT_CACHE.clear();
     scores.forEach((record) => {
       if (!record || typeof record.term !== 'string') return;
@@ -293,19 +282,14 @@ async function updateWord(term, action) {
   try {
     setProgressStatus(`正在更新「${term}」…`, 'info');
     const endpoint = `${API_BASE.replace(/\/$/, '')}/api/word-status`;
-    const response = await fetch(endpoint, {
+    const data = await fetchJson(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ term, action })
     });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    if (data.record) {
+    if (data?.record) {
       // Update local cache
       const idx = ALL_RECORDS.findIndex(rec => rec.term === data.record.term);
       if (idx >= 0) {

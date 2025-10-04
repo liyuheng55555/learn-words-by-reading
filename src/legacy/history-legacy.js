@@ -1,3 +1,7 @@
+import { escapeHtml } from '../utils/html.js';
+import { formatDateTime } from '../utils/time.js';
+import { fetchJson } from '../services/http.js';
+
 const historyStatusEl = document.getElementById('history-status');
 const sessionListEl = document.getElementById('history-session-list');
 const refreshBtn = document.getElementById('history-refresh');
@@ -44,22 +48,6 @@ function readScoreApiBase() {
   const fallback = 'http://localhost:4000';
   if (scoreApiInput) scoreApiInput.value = fallback;
   return fallback;
-}
-
-function formatDateTime(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
-function escapeHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function bucketSimilarity(value) {
@@ -110,13 +98,8 @@ async function fetchSessions({ autoSelect = false } = {}) {
     setHistoryStatus('正在载入历史记录…', 'info');
     const base = readScoreApiBase();
     const endpoint = `${base.replace(/\/$/, '')}/api/sessions?limit=100`;
-    const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    const data = await fetchJson(endpoint);
+    const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
     renderSessionList(sessions);
     setHistoryStatus(`已载入 ${sessions.length} 条历史记录`, 'ok');
     if (autoSelect && sessions.length) {
@@ -133,13 +116,8 @@ async function fetchDailyStats(days = 7) {
   try {
     const base = readScoreApiBase();
     const endpoint = `${base.replace(/\/$/, '')}/api/stats/daily?days=${encodeURIComponent(days)}`;
-    const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    const stats = Array.isArray(data.stats) ? data.stats : [];
+    const data = await fetchJson(endpoint);
+    const stats = Array.isArray(data?.stats) ? data.stats : [];
     DAILY_STATS = fillMissingDays(stats, days);
     if (chartEmptyEl) {
       chartEmptyEl.classList.toggle('hidden', DAILY_STATS.some(item => item.practiced || item.below_zero || item.above_two));
@@ -456,12 +434,7 @@ async function selectSession(id) {
     setHistoryStatus(`正在加载记录 #${id}…`, 'info');
     const base = readScoreApiBase();
     const endpoint = `${base.replace(/\/$/, '')}/api/sessions/${id}`;
-    const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const detail = await response.json();
+    const detail = await fetchJson(endpoint);
     SESSION_CACHE.set(id, detail);
     renderSessionDetail(detail);
     setHistoryStatus(`已加载记录 #${id}`, 'ok');

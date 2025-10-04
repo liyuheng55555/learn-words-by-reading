@@ -1,3 +1,6 @@
+import { escapeHtml } from '../utils/html.js';
+import { fetchJson } from '../services/http.js';
+
 // --- Vocabulary source list (unique, in requested order) ---
 // This will be dynamically populated based on uploaded article
 let VOCABS = [];
@@ -277,15 +280,6 @@ function setSyncStatus(message, kind = 'info'){
   syncStatusEl.textContent = message || '';
 }
 
-function escapeHtml(str){
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function renderServerScores(scores){
   if (!serverScoresEl) return;
   SERVER_SCORE_CACHE.clear();
@@ -371,18 +365,8 @@ async function fetchServerScores({ quiet = false } = {}) {
   try {
     const base = getScoreApiBase();
     const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    if (Array.isArray(data.scores)) {
+    const data = await fetchJson(endpoint);
+    if (Array.isArray(data?.scores)) {
       renderServerScores(data.scores);
       if (!quiet) {
         setSyncStatus(`已获取服务器记录（${data.scores.length} 个词）`, 'ok');
@@ -418,19 +402,9 @@ async function handleAutoFillWords(){
   setGeneratorStatus('正在向服务器请求推荐词汇…', 'info');
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-    }
-    const data = await response.json();
-    const practicedWords = Array.isArray(data.practiced) ? data.practiced.map(entry => entry.term).filter(Boolean) : [];
-    const freshWords = Array.isArray(data.fresh) ? data.fresh.map(entry => entry.term).filter(Boolean) : [];
+    const data = await fetchJson(endpoint);
+    const practicedWords = Array.isArray(data?.practiced) ? data.practiced.map(entry => entry.term).filter(Boolean) : [];
+    const freshWords = Array.isArray(data?.fresh) ? data.fresh.map(entry => entry.term).filter(Boolean) : [];
 
     if (!practicedWords.length && !freshWords.length) {
       setGeneratorStatus('未获取到符合条件的词汇，请调整参数。', 'warn');
@@ -914,24 +888,17 @@ if (syncServerBtn){
     setSyncStatus('正在同步判题结果到服务器…', 'info');
 
     try {
-      const response = await fetch(endpoint, {
+      const data = await fetchJson(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ results: payload, article: articleMarkdown })
       });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`HTTP ${response.status} ${response.statusText}: ${text}`);
-      }
-
-      const data = await response.json();
-      const scores = Array.isArray(data.scores) ? data.scores : [];
+      const scores = Array.isArray(data?.scores) ? data.scores : [];
       renderServerScores(scores);
-      const updatedCount = data.updated ?? payload.length;
-      const sessionId = data.session_id;
+      const updatedCount = data?.updated ?? payload.length;
+      const sessionId = data?.session_id;
       const sessionNote = sessionId ? `（历史记录 #${sessionId} 已生成）` : '';
       setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇${sessionNote}`, 'ok');
       toast(sessionId ? `同步完成！历史记录 #${sessionId}` : '服务器词表已更新 ✓', 'ok');
