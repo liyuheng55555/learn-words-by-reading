@@ -1,5 +1,6 @@
 import { escapeHtml } from '../utils/html.js';
 import { fetchJson } from '../services/http.js';
+import { createVocabListController } from '../ui/vocab-list.js';
 
 // --- Vocabulary source list (unique, in requested order) ---
 // This will be dynamically populated based on uploaded article
@@ -37,6 +38,13 @@ const totalCountInput = document.getElementById('total-count');
 const masteryThresholdInput = document.getElementById('mastery-threshold');
 const autoFillWordsBtn = document.getElementById('auto-fill-words');
 const SERVER_SCORE_CACHE = new Map();
+
+const vocabList = createVocabListController({
+  listElement: listEl,
+  filterInput: filterEl,
+  scoreCache: SERVER_SCORE_CACHE,
+  makeId
+});
 
 if (syncServerBtn && !syncServerBtn.dataset.originalText) {
   syncServerBtn.dataset.originalText = syncServerBtn.textContent;
@@ -285,7 +293,7 @@ function renderServerScores(scores){
   SERVER_SCORE_CACHE.clear();
   if (!scores || !scores.length){
     serverScoresEl.innerHTML = '<div class="empty">服务器暂无词汇记录。</div>';
-    updateScoreBadges();
+    vocabList.updateScoreBadges();
     return;
   }
 
@@ -313,7 +321,7 @@ function renderServerScores(scores){
     </table>
   `;
 
-  updateScoreBadges();
+  vocabList.updateScoreBadges();
 }
 
 function getScoreApiBase(){
@@ -733,7 +741,7 @@ function processArticleContent(content, variantPairs = []) {
     updateTermContextsFromArticle();
 
     // Rebuild vocabulary list
-    buildList();
+    vocabList.buildList(VOCABS);
 
     editorStatus.textContent = '文章保存成功！';
     editorStatus.style.color = 'var(--ok)';
@@ -933,60 +941,8 @@ function jumpToInput(term){
   }
 }
 
-function updateFilledState() {
-  VOCABS.forEach((term) => {
-    const input = document.getElementById(makeId(term));
-    if (!input) return;
-    const wrapper = input.closest('.item');
-    if (!wrapper) return;
-    const hasValue = input.value && input.value.trim().length > 0;
-    wrapper.classList.toggle('filled', hasValue);
-  });
-}
-
-function updateScoreBadges() {
-  if (!listEl) return;
-  const badges = listEl.querySelectorAll('.score-badge');
-  badges.forEach((badge) => {
-    const term = badge.dataset.termScore;
-    const value = term && SERVER_SCORE_CACHE.has(term) ? SERVER_SCORE_CACHE.get(term) : null;
-    if (typeof value === 'number') {
-      badge.textContent = value.toFixed(2);
-      badge.classList.add('score-known');
-    } else {
-      badge.textContent = '—';
-      badge.classList.remove('score-known');
-    }
-  });
-}
-
-function buildList(){
-  listEl.innerHTML = '';
-  const q = filterEl.value?.trim().toLowerCase();
-  for (const term of VOCABS){
-    if (q && !term.toLowerCase().includes(q)) continue;
-    const id = makeId(term);
-    const div = document.createElement('div');
-    div.className = 'item';
-    const rawScore = SERVER_SCORE_CACHE.has(term) ? SERVER_SCORE_CACHE.get(term) : null;
-    const scoreDisplay = typeof rawScore === 'number' ? rawScore.toFixed(2) : '—';
-    div.innerHTML = `
-      <div class="term" data-term="${term}">
-        <span>${term}</span>
-        <span class="score-badge" data-term-score="${term}">${scoreDisplay}</span>
-        <span class="jump" data-term="${term}">跳到文中</span>
-      </div>
-      <input aria-label="${term} 中文意思" placeholder="中文意思…" id="${id}" data-term="${term}" />
-    `;
-    listEl.appendChild(div);
-  }
-
-  updateFilledState();
-  updateScoreBadges();
-}
-
 // Initialize
-buildList();
+vocabList.buildList(VOCABS);
 
 // Delegated jump - both term and jump button work
 listEl.addEventListener('click', (e)=>{
@@ -999,7 +955,7 @@ listEl.addEventListener('click', (e)=>{
   }
 });
 
-filterEl.addEventListener('input', buildList);
+filterEl.addEventListener('input', () => vocabList.buildList(VOCABS));
 
 // Add focus event listener for input fields
 listEl.addEventListener('focus', (e)=>{
@@ -1037,14 +993,14 @@ function fill(data){
     const el = document.getElementById(makeId(term));
     if (el && term in data) el.value = data[term] || '';
   }
-  updateFilledState();
+  vocabList.updateFilledState(VOCABS);
 }
 
 function persistAnswers(){
   try {
     const data = gather();
     localStorage.setItem(KEY, JSON.stringify(data));
-    updateFilledState();
+    vocabList.updateFilledState(VOCABS);
   } catch (error) {
     console.warn('[Persist Answers] 保存失败:', error);
   }
@@ -1069,7 +1025,7 @@ listEl.addEventListener('input', (event) => {
   const target = event.target;
   if (target instanceof HTMLInputElement && target.dataset.term) {
     schedulePersistAnswers();
-    updateFilledState();
+    vocabList.updateFilledState(VOCABS);
   }
 });
 
@@ -1079,7 +1035,7 @@ document.getElementById('clear').addEventListener('click', ()=>{
     if (el) el.value = '';
   }
   persistAnswers();
-  updateFilledState();
+  vocabList.updateFilledState(VOCABS);
   toast('已清空输入', 'warn');
 });
 
