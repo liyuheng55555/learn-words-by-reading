@@ -4,6 +4,12 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "dev:frontend": "vite",
+    "build:frontend": "vite build",
+    "preview:frontend": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.1.9"
   }
 }
