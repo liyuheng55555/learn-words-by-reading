@@ -496,7 +496,7 @@ async function recordGradingSession(results, article) {
       return null;
     }
 
-    await createScoreSnapshot(sessionId, timestamp);
+    await createScoreSnapshot(sessionId, timestamp, normalized);
     return sessionId;
   } catch (error) {
     console.error('Failed to parse session lookup result:', error.message);
@@ -504,28 +504,48 @@ async function recordGradingSession(results, article) {
   }
 }
 
-async function createScoreSnapshot(sessionId, timestamp) {
+async function createScoreSnapshot(sessionId, timestamp, termEntries = []) {
+  const terms = Array.isArray(termEntries)
+    ? termEntries
+        .map((entry) => {
+          if (!entry) return null;
+          if (typeof entry === 'string') return entry;
+          if (typeof entry.term === 'string') return entry.term;
+          return null;
+        })
+        .map((term) => (term ? term.trim() : ''))
+        .filter(Boolean)
+    : [];
+
+  if (!terms.length) return;
+
+  const uniqueTerms = Array.from(new Set(terms));
+  if (!uniqueTerms.length) return;
+
+  const escapedList = uniqueTerms.map((term) => `'${escapeSqlString(term)}'`).join(',');
   const sql = `SELECT
-    SUM(CASE WHEN submissions > 0 THEN 1 ELSE 0 END) AS practiced,
-    SUM(CASE WHEN submissions > 0 AND score < 0 THEN 1 ELSE 0 END) AS below_zero,
-    SUM(CASE WHEN submissions > 0 AND score >= 0 AND score < 2 THEN 1 ELSE 0 END) AS zero_to_two,
-    SUM(CASE WHEN submissions > 0 AND score >= 2 AND score < 999 THEN 1 ELSE 0 END) AS above_two,
-    SUM(CASE WHEN submissions > 0 AND score >= 999 THEN 1 ELSE 0 END) AS mastered
-  FROM word_scores`;
+    COUNT(*) AS practiced,
+    SUM(CASE WHEN score < 0 THEN 1 ELSE 0 END) AS below_zero,
+    SUM(CASE WHEN score >= 0 AND score < 2 THEN 1 ELSE 0 END) AS zero_to_two,
+    SUM(CASE WHEN score >= 2 AND score < 999 THEN 1 ELSE 0 END) AS above_two,
+    SUM(CASE WHEN score >= 999 THEN 1 ELSE 0 END) AS mastered
+  FROM word_scores
+  WHERE term IN (${escapedList}) AND submissions > 0;`;
+
   const raw = await runSqlite(sql, { json: true });
   if (!raw) return;
   try {
     const parsed = JSON.parse(raw);
     const stats = Array.isArray(parsed) && parsed.length ? parsed[0] : null;
     if (!stats) return;
+
     const practiced = Number(stats.practiced) || 0;
+    if (practiced <= 0) return;
+
     const below = Number(stats.below_zero) || 0;
     const zeroToTwo = Number(stats.zero_to_two) || 0;
     const aboveTwo = Number(stats.above_two) || 0;
     const mastered = Number(stats.mastered) || 0;
-    if (practiced <= 0 && below === 0 && zeroToTwo === 0 && aboveTwo === 0 && mastered === 0) {
-      return;
-    }
     const takenAt = timestamp || new Date().toISOString();
 
     const insert = `INSERT INTO score_snapshots(session_id, taken_at, total_practiced, below_zero, zero_to_two, above_two, mastered)

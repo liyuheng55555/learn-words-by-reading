@@ -936,7 +936,6 @@ if (syncServerBtn){
       setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇${sessionNote}`, 'ok');
       toast(sessionId ? `同步完成！历史记录 #${sessionId}` : '服务器词表已更新 ✓', 'ok');
       localStorage.setItem('score-api-url', base);
-      await fetchServerScores({ quiet: true });
     } catch (error) {
       console.error('[Sync Scores] 同步失败:', error);
       setSyncStatus(`同步失败：${error.message}`, 'warn');
