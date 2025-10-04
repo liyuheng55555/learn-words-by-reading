@@ -19,7 +19,6 @@ const chartCanvas = document.getElementById('history-chart');
 const chartEmptyEl = document.getElementById('history-chart-empty');
 
 const SESSION_CACHE = new Map();
-let CURRENT_SESSION_ID = null;
 let CURRENT_LOW_WORDS = [];
 let CURRENT_SESSION_RESULTS = [];
 let RESULT_SORT_FIELD = 'term';
@@ -416,7 +415,6 @@ function renderSessionDetail(detail) {
 
 async function selectSession(id) {
   if (!Number.isInteger(id) || id <= 0) return;
-  CURRENT_SESSION_ID = id;
   Array.from(sessionListEl?.querySelectorAll('.history-session-item.active') || []).forEach((item) => {
     item.classList.remove('active');
   });
@@ -507,7 +505,7 @@ function fallbackCopyText(text) {
   let success = false;
   try {
     success = document.execCommand('copy');
-  } catch (error) {
+  } catch {
     success = false;
   }
   document.body.removeChild(textarea);

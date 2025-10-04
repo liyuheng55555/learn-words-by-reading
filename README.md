@@ -78,9 +78,17 @@
 
 - `geo_vocab_fill_in_webpage_english→chinese.html`：主页面文件
 - `styles.css`：样式文件
-- `script.js`：交互逻辑文件
+- `src/legacy/fill-legacy.js`：填空页面的核心交互逻辑（正在逐步模块化拆分）
+- `src/ui/`、`src/utils/`、`src/services/`、`src/state/`：前端模块化代码目录，`src/pages/` 中的入口通过 Vite 构建产出
+- `build/`：Vite 打包生成的静态资源，供 HTML 页面直接引用
 - `server/index.js`：Node.js + SQLite 计分服务
 - `data/vocabulary.csv`：初始化载入的基础词表
+
+## 开发者指南
+
+- `npm run dev:frontend`：使用 Vite 启动前端开发服务器，支持多页面热更新。
+- `npm run build:frontend`：将 `src/` 下的模块打包到 `build/` 目录，供静态页面引用。
+- `npm run lint:frontend`：运行 ESLint 检查前端源码的语法与代码风格。
 
 ## 后端服务说明
 

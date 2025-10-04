@@ -61,7 +61,6 @@ setSyncStatus('', 'info');
 fetchServerScores({ quiet: true });
 
 const DEFAULT_ARTICLE_WORD_GOAL = 220;
-const DEFAULT_ARTICLE_PARAGRAPH_COUNT = 3;
 const SIMILARITY_THRESHOLD_STRICT = 0.85;
 const SIMILARITY_THRESHOLD_PARTIAL = 0.6;
 
@@ -824,7 +823,7 @@ function extractSentenceFromContext(paragraphText, variant) {
   const normalizedParagraph = paragraphText.replace(/\s+/g, ' ').trim();
   const lowerVariant = variant.trim().toLowerCase();
 
-  const sentenceMatches = normalizedParagraph.match(/[^。！？!?\.]+[。！？!?\.]?/g) || [normalizedParagraph];
+  const sentenceMatches = normalizedParagraph.match(/[^。！？!?.]+[。！？!?.]?/g) || [normalizedParagraph];
   for (const sentence of sentenceMatches) {
     if (sentence.toLowerCase().includes(lowerVariant)) {
       return sentence.trim();
@@ -832,15 +831,6 @@ function extractSentenceFromContext(paragraphText, variant) {
   }
 
   return normalizedParagraph;
-}
-
-// Function to find term by id fragment
-function findTermByIdFragment(idFragment){
-  for (const term of VOCABS) {
-    const expectedId = term.toLowerCase().replace(/[^a-z0-9]+/g,'-');
-    if (expectedId === idFragment) return term;
-  }
-  return null;
 }
 
 // Mode switching functions
@@ -1027,7 +1017,9 @@ function schedulePersistAnswers(){
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
   fill(saved);
-} catch {}
+} catch (error) {
+  console.warn('[Persist Answers] 恢复缓存失败:', error);
+}
 
 listEl.addEventListener('input', (event) => {
   const target = event.target;
