@@ -1,6 +1,7 @@
 import { escapeHtml } from '../utils/html.js';
 import { fetchJson } from '../services/http.js';
 import { createVocabListController } from '../ui/vocab-list.js';
+import { appStore, setVocabs, setServerScores, setGradingResults, setArticleMarkdown } from '../state/app-store.js';
 
 // --- Vocabulary source list (unique, in requested order) ---
 // This will be dynamically populated based on uploaded article
@@ -44,6 +45,11 @@ const vocabList = createVocabListController({
   filterInput: filterEl,
   scoreCache: SERVER_SCORE_CACHE,
   makeId
+});
+
+appStore.subscribe('vocabs', (values) => {
+  VOCABS = Array.isArray(values) ? [...values] : [];
+  vocabList.buildList(VOCABS);
 });
 
 if (syncServerBtn && !syncServerBtn.dataset.originalText) {
@@ -291,6 +297,7 @@ function setSyncStatus(message, kind = 'info'){
 function renderServerScores(scores){
   if (!serverScoresEl) return;
   SERVER_SCORE_CACHE.clear();
+  setServerScores(Array.isArray(scores) ? scores : []);
   if (!scores || !scores.length){
     serverScoresEl.innerHTML = '<div class="empty">服务器暂无词汇记录。</div>';
     vocabList.updateScoreBadges();
@@ -729,6 +736,7 @@ async function handleGenerateArticle(){
 function processArticleContent(content, variantPairs = []) {
   try {
     CURRENT_ARTICLE_MARKDOWN = typeof content === 'string' ? content : '';
+    setArticleMarkdown(CURRENT_ARTICLE_MARKDOWN);
     resetVariantMappings(variantPairs);
     // Convert **markdown** to <strong> HTML tags and preserve paragraph structure
     const formattedContent = convertMarkdownToHtml(content);
@@ -785,7 +793,7 @@ function extractVocabulary(content) {
     }
   }
 
-  VOCABS = vocabList;
+  setVocabs(vocabList);
 }
 
 function updateTermContextsFromArticle() {
@@ -942,7 +950,7 @@ function jumpToInput(term){
 }
 
 // Initialize
-vocabList.buildList(VOCABS);
+setVocabs(VOCABS);
 
 // Delegated jump - both term and jump button work
 listEl.addEventListener('click', (e)=>{
@@ -1423,6 +1431,7 @@ function parseGradingResponse(aiResponse, terms) {
 function displayGradingResults(results, totalCount, options = {}) {
   const { suppressToast = false } = options || {};
   LAST_GRADING_RESULTS = results || {};
+  setGradingResults(LAST_GRADING_RESULTS);
   const scoreValues = Object.values(results)
     .map(r => (typeof r.similarity === 'number' ? r.similarity : null))
     .filter(v => v !== null);
