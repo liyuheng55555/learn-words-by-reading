@@ -1,4 +1,3 @@
-import { escapeHtml } from '../utils/html.js';
 import { fetchJson } from '../services/http.js';
 import { createVocabListController } from '../ui/vocab-list.js';
 import { appStore, setVocabs, setServerScores, setGradingResults, setArticleMarkdown } from '../state/app-store.js';
@@ -297,36 +296,16 @@ function renderServerScores(scores){
   if (!serverScoresEl) return;
   SERVER_SCORE_CACHE.clear();
   setServerScores(Array.isArray(scores) ? scores : []);
-  if (!scores || !scores.length){
-    serverScoresEl.innerHTML = '<div class="empty">服务器暂无词汇记录。</div>';
-    vocabList.updateScoreBadges();
-    return;
+  if (Array.isArray(scores)) {
+    for (const entry of scores) {
+      if (entry && typeof entry.term === 'string') {
+        const val = Number(entry.score);
+        SERVER_SCORE_CACHE.set(entry.term.trim(), Number.isFinite(val) ? val : null);
+      }
+    }
   }
-
-  const rows = scores.map(({ term, score, submissions, last_submission: lastSubmission }) => {
-    const safeTerm = escapeHtml(term);
-    const val = Number(score);
-    const displayScore = Number.isFinite(val) ? val.toFixed(2) : '0.00';
-    const submissionCount = Number.isFinite(Number(submissions)) ? Number(submissions) : 0;
-    if (typeof term === 'string') {
-      SERVER_SCORE_CACHE.set(term.trim(), Number.isFinite(val) ? val : null);
-    }
-    let displayTime = '-';
-    if (lastSubmission) {
-      const date = new Date(lastSubmission);
-      displayTime = Number.isNaN(date.getTime()) ? escapeHtml(lastSubmission) : date.toLocaleString();
-    }
-    return `<tr><td>${safeTerm}</td><td>${displayScore}</td><td>${submissionCount}</td><td>${escapeHtml(displayTime)}</td></tr>`;
-  }).join('');
-
-  serverScoresEl.innerHTML = `
-    <h5>服务器词表得分</h5>
-    <table>
-      <thead><tr><th>词汇</th><th>累计分数</th><th>提交次数</th><th>最后提交时间</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-
+  serverScoresEl.style.display = 'none';
+  serverScoresEl.innerHTML = '';
   vocabList.updateScoreBadges();
 }
 
