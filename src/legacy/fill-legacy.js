@@ -38,6 +38,40 @@ const totalCountInput = document.getElementById('total-count');
 const masteryThresholdInput = document.getElementById('mastery-threshold');
 const autoFillWordsBtn = document.getElementById('auto-fill-words');
 const SERVER_SCORE_CACHE = new Map();
+const SERVER_SUBMISSION_CACHE = new Map();
+
+function updateServerCaches(scores, { reset = false } = {}) {
+  if (reset) {
+    SERVER_SCORE_CACHE.clear();
+    SERVER_SUBMISSION_CACHE.clear();
+  }
+  if (!Array.isArray(scores)) {
+    vocabList.updateScoreBadges();
+    return;
+  }
+
+  for (const entry of scores) {
+    if (!entry || typeof entry.term !== 'string') continue;
+    const term = entry.term.trim();
+    if (!term) continue;
+
+    const scoreVal = Number(entry.score);
+    if (Number.isFinite(scoreVal)) {
+      SERVER_SCORE_CACHE.set(term, scoreVal);
+    } else {
+      SERVER_SCORE_CACHE.delete(term);
+    }
+
+    const submissionVal = Number(entry.submissions);
+    if (Number.isFinite(submissionVal)) {
+      SERVER_SUBMISSION_CACHE.set(term, submissionVal);
+    } else {
+      SERVER_SUBMISSION_CACHE.delete(term);
+    }
+  }
+
+  vocabList.updateScoreBadges();
+}
 
 const vocabList = createVocabListController({
   listElement: listEl,
@@ -294,19 +328,10 @@ function setSyncStatus(message, kind = 'info'){
 
 function renderServerScores(scores){
   if (!serverScoresEl) return;
-  SERVER_SCORE_CACHE.clear();
   setServerScores(Array.isArray(scores) ? scores : []);
-  if (Array.isArray(scores)) {
-    for (const entry of scores) {
-      if (entry && typeof entry.term === 'string') {
-        const val = Number(entry.score);
-        SERVER_SCORE_CACHE.set(entry.term.trim(), Number.isFinite(val) ? val : null);
-      }
-    }
-  }
+  updateServerCaches(scores, { reset: false });
   serverScoresEl.style.display = 'none';
   serverScoresEl.innerHTML = '';
-  vocabList.updateScoreBadges();
 }
 
 function getScoreApiBase(){
@@ -360,7 +385,12 @@ async function fetchServerScores({ quiet = false } = {}) {
     const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
     const data = await fetchJson(endpoint);
     if (Array.isArray(data?.scores)) {
-      renderServerScores(data.scores);
+      setServerScores(data.scores);
+      updateServerCaches(data.scores, { reset: true });
+      if (serverScoresEl) {
+        serverScoresEl.style.display = 'none';
+        serverScoresEl.innerHTML = '';
+      }
       if (!quiet) {
         setSyncStatus(`已获取服务器记录（${data.scores.length} 个词）`, 'ok');
       }
@@ -1403,28 +1433,37 @@ function displayGradingResults(results, totalCount, options = {}) {
   const { suppressToast = false } = options || {};
   LAST_GRADING_RESULTS = results || {};
   setGradingResults(LAST_GRADING_RESULTS);
-  const scoreValues = Object.values(results)
-    .map(r => (typeof r.similarity === 'number' ? r.similarity : null))
-    .filter(v => v !== null);
 
-  const avgSimilarity = scoreValues.length
-    ? Math.round((scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length) * 100) / 100
-    : 0;
+  const createBucket = () => ({
+    total: 0,
+    strict: 0,
+    partial: 0,
+    other: 0,
+    similaritySum: 0,
+    similarityCount: 0
+  });
 
-  const highMatches = scoreValues.filter(v => v >= SIMILARITY_THRESHOLD_STRICT).length;
-  const mediumMatches = scoreValues.filter(v => v < SIMILARITY_THRESHOLD_STRICT && v >= SIMILARITY_THRESHOLD_PARTIAL).length;
-  const strictLabel = SIMILARITY_THRESHOLD_STRICT.toFixed(2);
-  const partialLabel = SIMILARITY_THRESHOLD_PARTIAL.toFixed(2);
+  const buckets = {
+    overall: createBucket(),
+    new: createBucket(),
+    review: createBucket()
+  };
 
-  scoreSummaryEl.innerHTML = `
-    <div>判题完成！</div>
-    <div class="score-line">
-      <span>平均相似度：<strong>${avgSimilarity.toFixed(2)}</strong></span>
-      <span>高匹配(≥${strictLabel}): <strong>${highMatches}</strong></span>
-      <span>中等匹配(≥${partialLabel}): <strong>${mediumMatches}</strong></span>
-      <span>总词数: <strong>${totalCount}</strong></span>
-    </div>
-  `;
+  const recordStats = (bucketKey, similarity) => {
+    const bucket = buckets[bucketKey];
+    bucket.total += 1;
+    if (typeof similarity === 'number') {
+      bucket.similaritySum += similarity;
+      bucket.similarityCount += 1;
+    }
+    if (similarity === null || similarity < SIMILARITY_THRESHOLD_PARTIAL) {
+      bucket.other += 1;
+    } else if (similarity >= SIMILARITY_THRESHOLD_STRICT) {
+      bucket.strict += 1;
+    } else {
+      bucket.partial += 1;
+    }
+  };
 
   Object.entries(results).forEach(([term, result]) => {
     const itemEl = document.querySelector(`[data-term="${term}"]`)?.closest('.item');
@@ -1433,6 +1472,12 @@ function displayGradingResults(results, totalCount, options = {}) {
     itemEl.classList.remove('correct', 'incorrect', 'partial');
 
     const similarity = typeof result.similarity === 'number' ? result.similarity : null;
+    const submissionBefore = SERVER_SUBMISSION_CACHE.get(term) || 0;
+    const bucketKey = submissionBefore > 0 ? 'review' : 'new';
+
+    recordStats('overall', similarity);
+    recordStats(bucketKey, similarity);
+
     let bucket = 'incorrect';
     if (similarity !== null) {
       if (similarity >= SIMILARITY_THRESHOLD_STRICT) {
@@ -1497,11 +1542,37 @@ function displayGradingResults(results, totalCount, options = {}) {
     }
   });
 
+  const strictLabel = SIMILARITY_THRESHOLD_STRICT.toFixed(2);
+  const partialLabel = SIMILARITY_THRESHOLD_PARTIAL.toFixed(2);
+  const overallAvg = buckets.overall.similarityCount
+    ? buckets.overall.similaritySum / buckets.overall.similarityCount
+    : 0;
+
+  const formatSubsetLine = (label, bucket) => {
+    if (!bucket.total) {
+      return `${label}：0 个`;
+    }
+    const avg = bucket.similarityCount ? (bucket.similaritySum / bucket.similarityCount).toFixed(2) : '—';
+    return `${label}：${bucket.total} 个（平均 ${avg} | 高匹配 ${bucket.strict} | 中匹配 ${bucket.partial}）`;
+  };
+
+  scoreSummaryEl.innerHTML = `
+    <div>判题完成！</div>
+    <div class="score-line">
+      <span>平均相似度：<strong>${overallAvg.toFixed(2)}</strong></span>
+      <span>高匹配(≥${strictLabel}): <strong>${buckets.overall.strict}</strong></span>
+      <span>中等匹配(≥${partialLabel}): <strong>${buckets.overall.partial}</strong></span>
+      <span>总词数: <strong>${totalCount}</strong></span>
+    </div>
+    <div class="score-line">${formatSubsetLine('新词', buckets.new)}</div>
+    <div class="score-line">${formatSubsetLine('复习词', buckets.review)}</div>
+  `;
+
   aiResultsEl.style.display = 'block';
   aiConfigEl.style.display = 'none';
 
   if (!suppressToast) {
-    toast(`判题完成！平均相似度 ${avgSimilarity.toFixed(2)}`, 'ok');
+    toast(`判题完成！平均相似度 ${overallAvg.toFixed(2)}`, 'ok');
   }
 }
 
