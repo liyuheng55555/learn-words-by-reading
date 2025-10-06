@@ -285,11 +285,10 @@ function renderDailyChart(stats) {
   ctx.clearRect(0, 0, width, height);
 
   const labels = stats.map(item => item.day);
-  const practiced = stats.map(item => Number(item.practiced) || 0);
   const below = stats.map(item => Number(item.below_zero) || 0);
   const above = stats.map(item => Number(item.above_two) || 0);
 
-  const maxValue = Math.max(5, ...practiced, ...below, ...above);
+  const maxValue = Math.max(5, ...below, ...above);
   const padding = { top: 16, right: 24, bottom: 32, left: 40 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
@@ -348,7 +347,6 @@ function renderDailyChart(stats) {
     });
   }
 
-  drawLine(practiced, '#268bd2');
   drawLine(below, '#dc322f');
   drawLine(above, '#859900');
 }
