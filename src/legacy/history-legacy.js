@@ -17,6 +17,7 @@ const copyLowBtn = document.getElementById('history-copy-low');
 const resultsHeadEl = document.getElementById('history-results-head');
 const chartCanvas = document.getElementById('history-chart');
 const chartEmptyEl = document.getElementById('history-chart-empty');
+const toggleMeaningEl = document.getElementById('history-toggle-meaning');
 
 const SESSION_CACHE = new Map();
 let CURRENT_LOW_WORDS = [];
@@ -24,6 +25,7 @@ let CURRENT_SESSION_RESULTS = [];
 let RESULT_SORT_FIELD = 'term';
 let RESULT_SORT_ASC = true;
 let DAILY_STATS = [];
+let SHOW_MEANING = true;
 
 function setHistoryStatus(message, kind = 'info') {
   if (!historyStatusEl) return;
@@ -220,8 +222,10 @@ function renderResultsTable() {
     const similarity = typeof item.similarity === 'number' ? item.similarity : Number(item.similarity);
     const similarityDisplay = Number.isFinite(similarity) ? similarity.toFixed(2) : '—';
     const bucket = bucketSimilarity(Number.isFinite(similarity) ? similarity : NaN);
-    const standard = escapeHtml(item.standard_answer || item.standardAnswer || '');
-    const explanation = escapeHtml(item.explanation || '');
+    const standardRaw = item.standard_answer || item.standardAnswer || '';
+    const explanationRaw = item.explanation || '';
+    const standard = SHOW_MEANING ? escapeHtml(standardRaw) : '—';
+    const explanation = SHOW_MEANING ? escapeHtml(explanationRaw) : '—';
     return `
       <tr class="history-result-${bucket}">
         <td>${term || '—'}</td>
@@ -454,6 +458,19 @@ if (refreshBtn) {
   refreshBtn.addEventListener('click', () => {
     SESSION_CACHE.clear();
     fetchSessions({ autoSelect: false });
+  });
+}
+
+if (toggleMeaningEl) {
+  const stored = localStorage.getItem('history-show-meaning');
+  if (stored === 'false') {
+    SHOW_MEANING = false;
+    toggleMeaningEl.checked = false;
+  }
+  toggleMeaningEl.addEventListener('change', () => {
+    SHOW_MEANING = !!toggleMeaningEl.checked;
+    localStorage.setItem('history-show-meaning', SHOW_MEANING ? 'true' : 'false');
+    renderResultsTable();
   });
 }
 
