@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS grading_sessions (
   correct_terms INTEGER NOT NULL DEFAULT 0,
   partial_terms INTEGER NOT NULL DEFAULT 0,
   incorrect_terms INTEGER NOT NULL DEFAULT 0,
-  avg_similarity REAL
+  avg_similarity REAL,
+  scored INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS session_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,6 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_score_snapshots_taken_at ON score_snapshots(taken
 `;
   await runSqlite(schema);
   await ensureTableColumns();
+  await ensureGradingSessionColumns();
 }
 
 function sendJson(res, statusCode, data) {
@@ -413,7 +415,7 @@ function normalizeResultItem(item) {
   return { term, similarity, standardAnswer, explanation, context };
 }
 
-async function recordGradingSession(results, article) {
+async function recordGradingSession(results, article, { scored = false } = {}) {
   if (!Array.isArray(results) || results.length === 0) {
     return null;
   }
@@ -463,7 +465,8 @@ async function recordGradingSession(results, article) {
   const totalTerms = total;
 
   const statements = ['BEGIN TRANSACTION;'];
-  statements.push(`INSERT INTO grading_sessions(submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity) VALUES ('${timestamp}', ${articleSql}, ${totalTerms}, ${correct}, ${partial}, ${incorrect}, ${avgSql});`);
+  const scoredValue = scored ? 1 : 0;
+  statements.push(`INSERT INTO grading_sessions(submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity, scored) VALUES ('${timestamp}', ${articleSql}, ${totalTerms}, ${correct}, ${partial}, ${incorrect}, ${avgSql}, ${scoredValue});`);
 
   const sessionIdSelector = `(SELECT id FROM grading_sessions WHERE submitted_at = '${timestamp}' ORDER BY id DESC LIMIT 1)`;
 
@@ -496,7 +499,9 @@ async function recordGradingSession(results, article) {
       return null;
     }
 
-    await createScoreSnapshot(sessionId, timestamp, normalized);
+    if (scored) {
+      await createScoreSnapshot(sessionId, timestamp, normalized);
+    }
     return sessionId;
   } catch (error) {
     console.error('Failed to parse session lookup result:', error.message);
@@ -558,7 +563,7 @@ async function createScoreSnapshot(sessionId, timestamp, termEntries = []) {
 
 async function listSessions(limit = 50) {
   const cappedLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
-  const sql = `SELECT id, submitted_at, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity FROM grading_sessions ORDER BY submitted_at DESC, id DESC LIMIT ${cappedLimit};`;
+  const sql = `SELECT id, submitted_at, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity, scored FROM grading_sessions ORDER BY submitted_at DESC, id DESC LIMIT ${cappedLimit};`;
   const raw = await runSqlite(sql, { json: true });
   if (!raw) return [];
   try {
@@ -658,7 +663,7 @@ async function fetchSessionDetail(id) {
   const sessionId = Number(id);
   if (!Number.isInteger(sessionId) || sessionId <= 0) return null;
 
-  const sessionRaw = await runSqlite(`SELECT id, submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity FROM grading_sessions WHERE id = ${sessionId} LIMIT 1;`, { json: true });
+  const sessionRaw = await runSqlite(`SELECT id, submitted_at, article, total_terms, correct_terms, partial_terms, incorrect_terms, avg_similarity, scored FROM grading_sessions WHERE id = ${sessionId} LIMIT 1;`, { json: true });
   if (!sessionRaw) return null;
   let sessionRecord;
   try {
@@ -819,7 +824,64 @@ async function ensureTableColumns() {
   }
 }
 
+async function ensureGradingSessionColumns() {
+  const infoRaw = await runSqlite('PRAGMA table_info(grading_sessions);', { json: true });
+  let columns = [];
+  try {
+    columns = JSON.parse(infoRaw);
+  } catch (error) {
+    console.error('Failed to read grading sessions table info:', error.message);
+    return;
+  }
+  const names = new Set(columns.map((col) => col.name));
+  if (!names.has('scored')) {
+    await runSqlite('ALTER TABLE grading_sessions ADD COLUMN scored INTEGER NOT NULL DEFAULT 0;');
+  }
+  await runSqlite('UPDATE grading_sessions SET scored = 1 WHERE scored = 0 AND id IN (SELECT DISTINCT session_id FROM score_snapshots);');
+}
+
 async function handlePostScores(req, res) {
+  try {
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks).toString('utf-8');
+    const payload = JSON.parse(raw || '{}');
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    const article = typeof payload.article === 'string' ? payload.article : '';
+    const sessionIdRaw = payload.session_id ?? payload.sessionId;
+    const existingSessionId = Number(sessionIdRaw);
+    const hasExistingSession = Number.isInteger(existingSessionId) && existingSessionId > 0;
+    if (results.length === 0) {
+      return sendJson(res, 400, { error: '缺少有效的判题结果数据' });
+    }
+
+    await applyScores(results);
+    if (!hasExistingSession) {
+      await storeWordContexts(results, article);
+    }
+    let sessionId;
+    if (hasExistingSession) {
+      sessionId = existingSessionId;
+      await runSqlite(`UPDATE grading_sessions SET scored = 1 WHERE id = ${sessionId};`);
+      await createScoreSnapshot(sessionId, new Date().toISOString(), results);
+    } else {
+      sessionId = await recordGradingSession(results, article, { scored: true });
+    }
+    const submittedTerms = results
+      .filter(item => item && typeof item.term === 'string')
+      .map(item => item.term.trim())
+      .filter(Boolean);
+    const scores = await getScoresForTerms(submittedTerms);
+    return sendJson(res, 200, { updated: submittedTerms.length, scores, session_id: sessionId });
+  } catch (error) {
+    console.error('Failed to process POST /api/word-scores', error);
+    return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+  }
+}
+
+async function handleCreateSession(req, res) {
   try {
     const chunks = [];
     for await (const chunk of req) {
@@ -833,17 +895,22 @@ async function handlePostScores(req, res) {
       return sendJson(res, 400, { error: '缺少有效的判题结果数据' });
     }
 
-    await applyScores(results);
-    await storeWordContexts(results, article);
-    const sessionId = await recordGradingSession(results, article);
-    const submittedTerms = results
-      .filter(item => item && typeof item.term === 'string')
-      .map(item => item.term.trim())
+    const normalized = results
+      .map((item) => normalizeResultItem(item))
       .filter(Boolean);
-    const scores = await getScoresForTerms(submittedTerms);
-    return sendJson(res, 200, { updated: submittedTerms.length, scores, session_id: sessionId });
+    if (!normalized.length) {
+      return sendJson(res, 400, { error: '缺少有效的判题结果数据' });
+    }
+
+    await storeWordContexts(normalized, article);
+    const sessionId = await recordGradingSession(normalized, article, { scored: false });
+    if (!sessionId) {
+      return sendJson(res, 500, { error: '无法创建判题记录' });
+    }
+
+    return sendJson(res, 200, { session_id: sessionId });
   } catch (error) {
-    console.error('Failed to process POST /api/word-scores', error);
+    console.error('Failed to create grading session', error);
     return sendJson(res, 500, { error: error.message || '服务器内部错误' });
   }
 }
@@ -915,6 +982,10 @@ async function requestListener(req, res) {
 
   if (pathname === '/api/word-scores' && req.method === 'POST') {
     return handlePostScores(req, res);
+  }
+
+  if (pathname === '/api/sessions' && req.method === 'POST') {
+    return handleCreateSession(req, res);
   }
 
   if (pathname === '/api/sessions' && req.method === 'GET') {

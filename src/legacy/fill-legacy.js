@@ -1,6 +1,7 @@
 import { fetchJson } from '../services/http.js';
 import { createVocabListController } from '../ui/vocab-list.js';
 import { appStore, setVocabs, setServerScores, setGradingResults, setArticleMarkdown } from '../state/app-store.js';
+import { addGradingHistoryRecord, markGradingHistorySubmitted, markGradingHistoryScored } from '../utils/history-storage.js';
 
 // --- Vocabulary source list (unique, in requested order) ---
 // This will be dynamically populated based on uploaded article
@@ -98,6 +99,8 @@ const SIMILARITY_THRESHOLD_STRICT = 0.85;
 const SIMILARITY_THRESHOLD_PARTIAL = 0.6;
 
 let LAST_GRADING_RESULTS = {};
+let CURRENT_HISTORY_RECORD_ID = null;
+let CURRENT_SESSION_ID = null;
 
 // Build items
 function makeId(term){
@@ -359,6 +362,92 @@ function collectSimilarityPayload(){
     }
   }
   return results;
+}
+
+function buildHistoryResultEntries(results){
+  if (!results || typeof results !== 'object') return [];
+  const entries = [];
+  for (const [term, data] of Object.entries(results)){
+    if (!term) continue;
+    const trimmedTerm = term.trim();
+    if (!trimmedTerm) continue;
+    const rawSimilarity = data && typeof data.similarity === 'number'
+      ? data.similarity
+      : Number(data?.similarity);
+    const similarity = Number.isFinite(rawSimilarity) ? rawSimilarity : null;
+    const standardAnswer = data?.standardAnswer ?? data?.standard_answer ?? null;
+    const explanation = data?.explanation ?? null;
+    const context = TERM_CONTEXTS?.get(trimmedTerm) || null;
+    entries.push({
+      term: trimmedTerm,
+      similarity,
+      standard_answer: typeof standardAnswer === 'string' && standardAnswer.trim() ? standardAnswer : null,
+      explanation: typeof explanation === 'string' && explanation.trim() ? explanation : null,
+      context: typeof context === 'string' && context.trim() ? context : null
+    });
+  }
+  return entries.sort((a, b) => a.term.localeCompare(b.term, 'en', { sensitivity: 'base' }));
+}
+
+function recordLatestGradingHistory(summary){
+  const entries = buildHistoryResultEntries(LAST_GRADING_RESULTS);
+  if (!entries.length) {
+    CURRENT_HISTORY_RECORD_ID = null;
+    return null;
+  }
+  const articleMarkdown = getCurrentArticleMarkdown();
+  const record = addGradingHistoryRecord({
+    article: articleMarkdown,
+    summary: summary || {},
+    results: entries
+  });
+  CURRENT_HISTORY_RECORD_ID = record?.id || null;
+  if (!record) {
+    return null;
+  }
+  return {
+    record,
+    entries,
+    article: articleMarkdown
+  };
+}
+
+async function autoSubmitGradingHistory(recordInfo){
+  if (!recordInfo || !recordInfo.record || !Array.isArray(recordInfo.entries) || !recordInfo.entries.length) {
+    return;
+  }
+
+  const base = getScoreApiBase();
+  const endpoint = base.replace(/\/$/, '') + '/api/sessions';
+  const recordId = recordInfo.record.id;
+  try {
+    const response = await fetchJson(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        results: recordInfo.entries,
+        article: recordInfo.article || ''
+      })
+    });
+
+    const sessionIdRaw = response?.session_id;
+    const sessionId = Number(sessionIdRaw);
+    const updatedRecord = markGradingHistorySubmitted(recordId, {
+      sessionId: Number.isInteger(sessionId) && sessionId > 0 ? sessionId : null,
+      submittedAt: new Date().toISOString()
+    });
+
+    if (CURRENT_HISTORY_RECORD_ID === recordId) {
+      CURRENT_SESSION_ID = updatedRecord?.sessionId ?? (Number.isInteger(sessionId) && sessionId > 0 ? sessionId : null);
+    }
+
+    localStorage.setItem('score-api-url', base);
+  } catch (error) {
+    console.error('[History] 自动保存判题记录失败:', error);
+    toast('自动保存判题记录失败：' + error.message, 'warn');
+  }
 }
 
 function getCurrentArticleMarkdown(){
@@ -896,6 +985,13 @@ if (syncServerBtn){
     const base = getScoreApiBase();
     const endpoint = base.replace(/\/$/, '') + '/api/word-scores';
     const articleMarkdown = getCurrentArticleMarkdown();
+    const requestBody = {
+      results: payload,
+      article: articleMarkdown
+    };
+    if (Number.isInteger(CURRENT_SESSION_ID) && CURRENT_SESSION_ID > 0) {
+      requestBody.session_id = CURRENT_SESSION_ID;
+    }
     const originalLabel = syncServerBtn.dataset.originalText || syncServerBtn.textContent;
     syncServerBtn.dataset.originalText = originalLabel;
     syncServerBtn.disabled = true;
@@ -908,7 +1004,7 @@ if (syncServerBtn){
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ results: payload, article: articleMarkdown })
+        body: JSON.stringify(requestBody)
       });
       const scores = Array.isArray(data?.scores) ? data.scores : [];
       renderServerScores(scores);
@@ -918,6 +1014,19 @@ if (syncServerBtn){
       setSyncStatus(`同步成功，已更新 ${updatedCount} 个词汇${sessionNote}`, 'ok');
       toast(sessionId ? `同步完成！历史记录 #${sessionId}` : '服务器词表已更新 ✓', 'ok');
       localStorage.setItem('score-api-url', base);
+      if (Number.isInteger(Number(sessionId)) && Number(sessionId) > 0) {
+        CURRENT_SESSION_ID = Number(sessionId);
+      }
+      if (CURRENT_HISTORY_RECORD_ID) {
+        markGradingHistorySubmitted(CURRENT_HISTORY_RECORD_ID, {
+          sessionId,
+          submittedAt: new Date().toISOString()
+        });
+        markGradingHistoryScored(CURRENT_HISTORY_RECORD_ID, {
+          sessionId
+        });
+        CURRENT_HISTORY_RECORD_ID = null;
+      }
     } catch (error) {
       console.error('[Sync Scores] 同步失败:', error);
       setSyncStatus(`同步失败：${error.message}`, 'warn');
@@ -1430,7 +1539,7 @@ function parseGradingResponse(aiResponse, terms) {
 
 // Display grading results
 function displayGradingResults(results, totalCount, options = {}) {
-  const { suppressToast = false } = options || {};
+  const { suppressToast = false, skipHistoryRecord = false, sessionId = null } = options || {};
   LAST_GRADING_RESULTS = results || {};
   setGradingResults(LAST_GRADING_RESULTS);
 
@@ -1544,9 +1653,18 @@ function displayGradingResults(results, totalCount, options = {}) {
 
   const strictLabel = SIMILARITY_THRESHOLD_STRICT.toFixed(2);
   const partialLabel = SIMILARITY_THRESHOLD_PARTIAL.toFixed(2);
-  const overallAvg = buckets.overall.similarityCount
+  const avgValue = buckets.overall.similarityCount
     ? buckets.overall.similaritySum / buckets.overall.similarityCount
-    : 0;
+    : null;
+  const overallAvg = avgValue ?? 0;
+  const normalizedTotalCount = Number.isFinite(Number(totalCount)) ? Number(totalCount) : buckets.overall.total;
+  const summaryForHistory = {
+    total: normalizedTotalCount || buckets.overall.total,
+    correct: buckets.overall.strict,
+    partial: buckets.overall.partial,
+    incorrect: buckets.overall.other + Math.max(0, (normalizedTotalCount || 0) - buckets.overall.total),
+    avg: avgValue
+  };
 
   const formatSubsetLine = (label, bucket) => {
     if (!bucket.total) {
@@ -1571,6 +1689,18 @@ function displayGradingResults(results, totalCount, options = {}) {
   aiResultsEl.style.display = 'block';
   aiConfigEl.style.display = 'none';
 
+  if (skipHistoryRecord) {
+    CURRENT_HISTORY_RECORD_ID = null;
+    const normalizedSessionId = Number(sessionId);
+    CURRENT_SESSION_ID = Number.isInteger(normalizedSessionId) && normalizedSessionId > 0 ? normalizedSessionId : null;
+  } else {
+    CURRENT_SESSION_ID = null;
+    const recordInfo = recordLatestGradingHistory(summaryForHistory);
+    if (recordInfo) {
+      autoSubmitGradingHistory(recordInfo);
+    }
+  }
+
   if (!suppressToast) {
     toast(`判题完成！平均相似度 ${overallAvg.toFixed(2)}`, 'ok');
   }
@@ -1579,6 +1709,8 @@ function displayGradingResults(results, totalCount, options = {}) {
 // Clear previous grading results
 function clearGradingResults() {
   LAST_GRADING_RESULTS = {};
+  CURRENT_HISTORY_RECORD_ID = null;
+  CURRENT_SESSION_ID = null;
   document.querySelectorAll('.item').forEach(item => {
     item.classList.remove('correct', 'incorrect', 'partial');
     const indicator = item.querySelector('.grade-indicator');
@@ -1675,6 +1807,10 @@ async function loadSessionReplayFromServer(sessionIdRaw) {
     const results = Array.isArray(data?.results) ? data.results : [];
     const article = typeof session.article === 'string' ? session.article : '';
 
+    CURRENT_SESSION_ID = Number.isInteger(Number(session.id)) && Number(session.id) > 0
+      ? Number(session.id)
+      : null;
+
     if (typeof CURRENT_ARTICLE_MARKDOWN !== 'undefined') {
       CURRENT_ARTICLE_MARKDOWN = article;
     }
@@ -1704,7 +1840,11 @@ async function loadSessionReplayFromServer(sessionIdRaw) {
     });
 
     if (Object.keys(resultsMap).length) {
-      displayGradingResults(resultsMap, session.total_terms || results.length, { suppressToast: true });
+      displayGradingResults(resultsMap, session.total_terms || results.length, {
+        suppressToast: true,
+        skipHistoryRecord: true,
+        sessionId: session.id
+      });
     } else {
       clearGradingResults();
       aiResultsEl.style.display = 'none';

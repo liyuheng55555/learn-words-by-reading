@@ -319,6 +319,31 @@ main {
   color: var(--warn);
 }
 
+.history-session-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(38, 139, 210, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(38, 139, 210, 0.2);
+}
+
+.history-session-status.unscored {
+  background: rgba(220, 50, 47, 0.12);
+  border-color: rgba(220, 50, 47, 0.25);
+  color: var(--warn);
+}
+
+.history-session-status.scored {
+  background: rgba(133, 153, 0, 0.15);
+  border-color: rgba(133, 153, 0, 0.25);
+  color: var(--ok);
+}
+
 .history-session-id {
   font-weight: 700;
   color: var(--accent);
