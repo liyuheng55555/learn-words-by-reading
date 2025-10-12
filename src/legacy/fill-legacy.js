@@ -786,7 +786,9 @@ async function handleGenerateArticle(){
       throw new Error('AI未返回文章内容');
     }
 
-    articleEditor.value = article.trim();
+    if (articleEditor) {
+      articleEditor.value = article.trim();
+    }
 
     let variants;
     let mappingFailed = false;
@@ -848,11 +850,15 @@ function processArticleContent(content, variantPairs = []) {
     // Rebuild vocabulary list
     vocabList.buildList(VOCABS);
 
-    editorStatus.textContent = '文章保存成功！';
-    editorStatus.style.color = 'var(--ok)';
+    if (editorStatus) {
+      editorStatus.textContent = '文章保存成功！';
+      editorStatus.style.color = 'var(--ok)';
+    }
   } catch (error) {
-    editorStatus.textContent = '处理文章内容时出错: ' + error.message;
-    editorStatus.style.color = 'var(--warn)';
+    if (editorStatus) {
+      editorStatus.textContent = '处理文章内容时出错: ' + error.message;
+      editorStatus.style.color = 'var(--warn)';
+    }
   }
 }
 
@@ -933,34 +939,40 @@ function extractSentenceFromContext(paragraphText, variant) {
 
 // Mode switching functions
 function switchToEditMode() {
-  editModeBtn.classList.add('active');
-  viewModeBtn.classList.remove('active');
-  editSection.style.display = 'block';
-  viewSection.style.display = 'none';
+  if (editModeBtn) editModeBtn.classList.add('active');
+  if (viewModeBtn) viewModeBtn.classList.remove('active');
+  if (editSection) editSection.style.display = 'block';
+  if (viewSection) viewSection.style.display = 'none';
 }
 
 function switchToViewMode() {
-  editModeBtn.classList.remove('active');
-  viewModeBtn.classList.add('active');
-  editSection.style.display = 'none';
-  viewSection.style.display = 'block';
+  if (editModeBtn) editModeBtn.classList.remove('active');
+  if (viewModeBtn) viewModeBtn.classList.add('active');
+  if (editSection) editSection.style.display = 'none';
+  if (viewSection) viewSection.style.display = 'block';
 }
 
 // Mode switching event listeners
-editModeBtn.addEventListener('click', switchToEditMode);
-viewModeBtn.addEventListener('click', switchToViewMode);
+if (editModeBtn) {
+  editModeBtn.addEventListener('click', switchToEditMode);
+}
+if (viewModeBtn) {
+  viewModeBtn.addEventListener('click', switchToViewMode);
+}
 
 // Save article event listener
-saveArticleBtn.addEventListener('click', () => {
-  const content = articleEditor.value;
-  if (content.trim()) {
-    processArticleContent(content);
-    switchToViewMode();
-  } else {
-    editorStatus.textContent = '请输入文章内容';
-    editorStatus.style.color = 'var(--warn)';
-  }
-});
+if (saveArticleBtn && articleEditor) {
+  saveArticleBtn.addEventListener('click', () => {
+    const content = articleEditor.value;
+    if (content.trim()) {
+      processArticleContent(content);
+      switchToViewMode();
+    } else if (editorStatus) {
+      editorStatus.textContent = '请输入文章内容';
+      editorStatus.style.color = 'var(--warn)';
+    }
+  });
+}
 
 if (generateArticleBtn){
   generateArticleBtn.addEventListener('click', handleGenerateArticle);
