@@ -1315,6 +1315,13 @@ button:hover, .btn:hover {
   white-space: normal;
 }
 
+.progress-table.hide-meaning th.meaning-col,
+.progress-table.hide-meaning td.meaning-cell,
+.progress-table table.hide-meaning th.meaning-col,
+.progress-table table.hide-meaning td.meaning-cell {
+  display: none;
+}
+
 .progress-table td.meaning-cell {
   line-height: 1.5;
   max-width: 360px;

@@ -15,12 +15,16 @@ const contextListEl = document.getElementById('context-list');
 const contextEmptyEl = document.getElementById('context-empty');
 const contextCloseBtn = document.getElementById('context-close');
 const summaryEl = document.getElementById('progress-summary');
+const meaningToggleEl = document.getElementById('toggle-meaning');
+const progressTableWrapperEl = document.querySelector('.progress-table');
+const progressTableEl = document.querySelector('.progress-table table');
 
 let ALL_RECORDS = [];
 let SORT_FIELD = 'order';
 let SORT_ASC = true;
 const CONTEXT_CACHE = new Map();
 let CURRENT_CONTEXT_TERM = '';
+let SHOW_MEANING = true;
 
 function setProgressStatus(message, kind = 'info') {
   if (!progressStatusEl) return;
@@ -120,11 +124,35 @@ function getTimestamp(value) {
   return ts;
 }
 
+function updateMeaningVisibility() {
+  const hide = !SHOW_MEANING;
+  if (progressTableWrapperEl) {
+    progressTableWrapperEl.classList.toggle('hide-meaning', hide);
+  }
+  if (progressTableEl) {
+    progressTableEl.classList.toggle('hide-meaning', hide);
+    const meaningHeader = progressTableEl.querySelector('th.meaning-col');
+    if (meaningHeader instanceof HTMLElement) {
+      meaningHeader.style.display = hide ? 'none' : '';
+    }
+    const meaningCells = progressTableEl.querySelectorAll('td.meaning-cell');
+    meaningCells.forEach((cell) => {
+      if (cell instanceof HTMLElement) {
+        cell.style.display = hide ? 'none' : '';
+      }
+    });
+  }
+  if (meaningToggleEl && meaningToggleEl.checked !== SHOW_MEANING) {
+    meaningToggleEl.checked = SHOW_MEANING;
+  }
+}
+
 function renderTable(records) {
   if (!progressBodyEl) return;
 
   if (!records.length) {
     progressBodyEl.innerHTML = '<tr><td class="empty" colspan="7">未找到匹配的词汇。</td></tr>';
+    updateMeaningVisibility();
     return;
   }
 
@@ -139,6 +167,7 @@ function renderTable(records) {
     const hasContexts = contexts.length > 0;
     const contextBadge = hasContexts ? ' <span class="context-indicator" title="查看最近语境">语境</span>' : '';
     const termButton = `<button type="button" class="term-context-btn" data-term="${escapeHtml(term)}">${escapeHtml(term)}${contextBadge}</button>`;
+    const meaningContent = SHOW_MEANING ? escapeHtml(meaning || '—') : '';
 
     const masteredClass = score >= 999 ? 'status-mastered' : (submissions === 0 ? 'status-fresh' : '');
 
@@ -146,7 +175,7 @@ function renderTable(records) {
       <tr class="${masteredClass}">
         <td>${Number.isFinite(order) ? order + 1 : ''}</td>
         <td>${termButton}</td>
-        <td class="meaning-cell">${escapeHtml(meaning || '—')}</td>
+        <td class="meaning-cell"${SHOW_MEANING ? '' : ' style="display:none"'}>${meaningContent}</td>
         <td>${formatScore(score)}</td>
         <td>${submissions}</td>
         <td>${escapeHtml(formatTimestamp(lastSubmission))}</td>
@@ -157,6 +186,8 @@ function renderTable(records) {
       </tr>
     `;
   }).join('');
+
+  updateMeaningVisibility();
 }
 
 function renderSummary(records) {
@@ -317,6 +348,16 @@ function rerender(){
   const filtered = applyFilters(ALL_RECORDS);
   renderTable(filtered);
   renderSummary(filtered);
+}
+
+if (meaningToggleEl) {
+  SHOW_MEANING = Boolean(meaningToggleEl.checked);
+  updateMeaningVisibility();
+  meaningToggleEl.addEventListener('change', () => {
+    SHOW_MEANING = meaningToggleEl.checked;
+    updateMeaningVisibility();
+    rerender();
+  });
 }
 
 progressSearchEl.addEventListener('input', rerender);

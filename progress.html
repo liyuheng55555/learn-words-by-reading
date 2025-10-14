@@ -17,21 +17,6 @@
       </div>
     </div>
   </nav>
-  <header>
-    <div class="wrap">
-      <div class="progress-header">
-        <div>
-          <h1>词汇掌握情况</h1>
-          <p class="hint">查看全部词汇的分数、练习次数与最后练习时间，可手动标记“已掌握”或“重置未练习”。</p>
-        </div>
-        <div class="progress-actions">
-          <a class="nav-link" href="geo_vocab_fill_in_webpage_english→chinese.html">返回阅读学单词</a>
-          <button id="refresh-progress" class="sync-btn">🔄 刷新数据</button>
-        </div>
-      </div>
-    </div>
-  </header>
-
   <main class="progress-main">
     <div class="wrap">
       <div class="progress-controls">
@@ -48,6 +33,10 @@
             <option value="mastered">已掌握</option>
             <option value="learning">学习中</option>
           </select>
+        </label>
+        <label class="toggle-meaning">
+          <input id="toggle-meaning" type="checkbox" checked />
+          显示中文释义
         </label>
       </div>
 
