@@ -40,6 +40,13 @@
         </label>
       </div>
 
+      <form id="add-word-form" class="add-word-form">
+        <input id="new-term" type="text" placeholder="英文词汇" autocomplete="off" required />
+        <input id="new-meaning" type="text" placeholder="中文释义" autocomplete="off" required />
+        <button type="submit" class="add-word-btn">添加词汇</button>
+        <span id="add-word-status" class="add-word-status" role="status" aria-live="polite"></span>
+      </form>
+
       <div id="progress-status" class="sync-status"></div>
       <div id="progress-summary" class="progress-summary"></div>
 

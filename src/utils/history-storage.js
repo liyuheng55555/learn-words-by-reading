@@ -204,6 +204,15 @@ export function markGradingHistoryScored(id, sessionInfo = {}) {
   });
 }
 
+export function deleteGradingHistoryRecord(id) {
+  if (!hasStorage() || !id) return false;
+  const records = readRecords();
+  const filtered = records.filter((record) => record.id !== id);
+  if (filtered.length === records.length) return false;
+  writeRecords(filtered);
+  return true;
+}
+
 export function getGradingHistoryRecord(id) {
   if (!hasStorage() || !id) return null;
   const records = readRecords();

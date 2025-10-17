@@ -915,6 +915,23 @@ async function handleCreateSession(req, res) {
   }
 }
 
+async function deleteSession(sessionId) {
+  const id = Number(sessionId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('无效的判题记录ID');
+  }
+  await runSqlite('BEGIN TRANSACTION;');
+  try {
+    await runSqlite(`DELETE FROM session_results WHERE session_id = ${id};`);
+    await runSqlite(`DELETE FROM score_snapshots WHERE session_id = ${id};`);
+    await runSqlite(`DELETE FROM grading_sessions WHERE id = ${id};`);
+    await runSqlite('COMMIT;');
+  } catch (error) {
+    await runSqlite('ROLLBACK;');
+    throw error;
+  }
+}
+
 async function handleWordStatus(req, res) {
   try {
     const chunks = [];
@@ -950,6 +967,92 @@ async function handleWordStatus(req, res) {
     return sendJson(res, 200, { term, action, record: result || null });
   } catch (error) {
     console.error('Failed to update word status', error);
+    return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+  }
+}
+
+async function handleCreateWord(req, res) {
+  try {
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks).toString('utf-8');
+    let payload = {};
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch (error) {
+        return sendJson(res, 400, { error: '请求体不是有效的 JSON' });
+      }
+    }
+
+    const term = typeof payload.term === 'string' ? payload.term.trim() : '';
+    const meaning = typeof payload.meaning === 'string' ? payload.meaning.trim() : '';
+    if (!term) {
+      return sendJson(res, 400, { error: '缺少词汇名称' });
+    }
+    if (!meaning) {
+      return sendJson(res, 400, { error: '缺少中文释义' });
+    }
+
+    const escapedTerm = term.replace(/'/g, "''");
+    const escapedMeaning = meaning.replace(/'/g, "''");
+    const insertSql = `INSERT INTO word_scores(term, meaning, score, submissions, last_submission, correct_count, incorrect_count)
+      VALUES ('${escapedTerm}', '${escapedMeaning}', ${MIN_SCORE}, 0, NULL, 0, 0);`;
+
+    try {
+      await runSqlite(insertSql);
+    } catch (error) {
+      if (error && typeof error.message === 'string' && error.message.includes('UNIQUE')) {
+        return sendJson(res, 409, { error: '词汇已存在' });
+      }
+      throw error;
+    }
+
+    const [record] = await getScoresForTerms([term]);
+    return sendJson(res, 200, { record: record || null });
+  } catch (error) {
+    console.error('Failed to create word', error);
+    return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+  }
+}
+
+async function handleDeleteWord(req, res, termParam) {
+  try {
+    const rawTerm = typeof termParam === 'string' ? termParam.trim() : '';
+    if (!rawTerm) {
+      return sendJson(res, 400, { error: '缺少词汇名称' });
+    }
+
+    const escaped = rawTerm.replace(/'/g, "''");
+    const existingRaw = await runSqlite(`SELECT term FROM word_scores WHERE term = '${escaped}' LIMIT 1;`, { json: true });
+    let exists = false;
+    if (existingRaw) {
+      try {
+        const parsed = JSON.parse(existingRaw);
+        exists = Array.isArray(parsed) && parsed.length > 0;
+      } catch (error) {
+        console.warn('Failed to parse lookup for deletion', error.message);
+      }
+    }
+
+    if (!exists) {
+      return sendJson(res, 404, { error: '未找到对应的词汇' });
+    }
+
+    const statements = [
+      'BEGIN TRANSACTION;',
+      `DELETE FROM word_scores WHERE term = '${escaped}';`,
+      `DELETE FROM word_contexts WHERE term = '${escaped}';`,
+      'COMMIT;'
+    ];
+
+    await runSqlite(statements.join('\n'));
+
+    return sendJson(res, 200, { deleted: true });
+  } catch (error) {
+    console.error('Failed to delete word', error);
     return sendJson(res, 500, { error: error.message || '服务器内部错误' });
   }
 }
@@ -1017,6 +1120,21 @@ async function requestListener(req, res) {
     }
   }
 
+  if (pathname.startsWith('/api/sessions/') && req.method === 'DELETE') {
+    const idPart = pathname.replace('/api/sessions/', '').trim();
+    const id = Number(idPart);
+    if (!Number.isInteger(id) || id <= 0) {
+      return sendJson(res, 400, { error: '无效的历史记录ID' });
+    }
+    try {
+      await deleteSession(id);
+      return sendJson(res, 200, { success: true });
+    } catch (error) {
+      console.error('Failed to delete grading session', error);
+      return sendJson(res, 500, { error: error.message || '服务器内部错误' });
+    }
+  }
+
   if (pathname === '/api/stats/daily' && req.method === 'GET') {
     try {
       const days = query && query.days ? Number(query.days) : 7;
@@ -1044,6 +1162,21 @@ async function requestListener(req, res) {
       console.error('Failed to fetch word suggestions', error);
       return sendJson(res, 500, { error: error.message || '服务器内部错误' });
     }
+  }
+
+  if (pathname.startsWith('/api/words/') && req.method === 'DELETE') {
+    const rawTerm = pathname.slice('/api/words/'.length);
+    let decodedTerm = rawTerm;
+    try {
+      decodedTerm = decodeURIComponent(rawTerm);
+    } catch (error) {
+      console.warn('Failed to decode term for deletion', rawTerm, error.message);
+    }
+    return handleDeleteWord(req, res, decodedTerm);
+  }
+
+  if (pathname === '/api/words' && req.method === 'POST') {
+    return handleCreateWord(req, res);
   }
 
   if (pathname === '/api/word-status' && req.method === 'POST') {

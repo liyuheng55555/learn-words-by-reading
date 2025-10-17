@@ -18,6 +18,10 @@ const summaryEl = document.getElementById('progress-summary');
 const meaningToggleEl = document.getElementById('toggle-meaning');
 const progressTableWrapperEl = document.querySelector('.progress-table');
 const progressTableEl = document.querySelector('.progress-table table');
+const addWordFormEl = document.getElementById('add-word-form');
+const newTermEl = document.getElementById('new-term');
+const newMeaningEl = document.getElementById('new-meaning');
+const addWordStatusEl = document.getElementById('add-word-status');
 
 let ALL_RECORDS = [];
 let SORT_FIELD = 'order';
@@ -25,6 +29,7 @@ let SORT_ASC = true;
 const CONTEXT_CACHE = new Map();
 let CURRENT_CONTEXT_TERM = '';
 let SHOW_MEANING = true;
+let IS_CREATING_WORD = false;
 
 function setProgressStatus(message, kind = 'info') {
   if (!progressStatusEl) return;
@@ -32,6 +37,16 @@ function setProgressStatus(message, kind = 'info') {
   if (kind === 'ok') progressStatusEl.classList.add('ok');
   if (kind === 'warn') progressStatusEl.classList.add('warn');
   progressStatusEl.textContent = message || '';
+}
+
+function setAddWordStatus(message, kind = 'info') {
+  if (!addWordStatusEl) return;
+  addWordStatusEl.textContent = message || '';
+  addWordStatusEl.classList.remove('ok', 'error', 'warn');
+  if (!message) return;
+  if (kind === 'ok') addWordStatusEl.classList.add('ok');
+  if (kind === 'error') addWordStatusEl.classList.add('error');
+  if (kind === 'warn') addWordStatusEl.classList.add('warn');
 }
 
 function formatScore(value) {
@@ -124,6 +139,36 @@ function getTimestamp(value) {
   return ts;
 }
 
+function upsertRecord(record) {
+  if (!record || typeof record.term !== 'string') return;
+  const term = record.term;
+  const contexts = Array.isArray(record.recent_contexts) ? record.recent_contexts.slice(0, 3) : [];
+  const existingIndex = ALL_RECORDS.findIndex(item => item.term === term);
+  if (existingIndex >= 0) {
+    const previousOrder = Number.isFinite(ALL_RECORDS[existingIndex]._order)
+      ? ALL_RECORDS[existingIndex]._order
+      : existingIndex;
+    ALL_RECORDS[existingIndex] = { ...record, _order: previousOrder };
+  } else {
+    const nextOrder = Number.isFinite(record._order) ? record._order : ALL_RECORDS.length;
+    ALL_RECORDS.push({ ...record, _order: nextOrder });
+  }
+  CONTEXT_CACHE.set(term, contexts);
+}
+
+function removeRecord(term) {
+  if (!term || typeof term !== 'string') return;
+  const normalized = term.trim();
+  if (!normalized) return;
+  const nextRecords = ALL_RECORDS.filter(item => item && item.term !== normalized);
+  if (nextRecords.length === ALL_RECORDS.length) return;
+  ALL_RECORDS = nextRecords;
+  CONTEXT_CACHE.delete(normalized);
+  if (CURRENT_CONTEXT_TERM === normalized) {
+    hideContextPanel();
+  }
+}
+
 function updateMeaningVisibility() {
   const hide = !SHOW_MEANING;
   if (progressTableWrapperEl) {
@@ -182,6 +227,7 @@ function renderTable(records) {
         <td class="actions">
           <button data-term="${escapeHtml(term)}" data-action="mastered" class="mark-btn mastered">标记已掌握</button>
           <button data-term="${escapeHtml(term)}" data-action="reset" class="mark-btn reset">重置未练习</button>
+          <button data-term="${escapeHtml(term)}" data-action="delete" class="mark-btn delete">删除词汇</button>
         </td>
       </tr>
     `;
@@ -321,16 +367,8 @@ async function updateWord(term, action) {
       body: JSON.stringify({ term, action })
     });
     if (data?.record) {
-      // Update local cache
-      const idx = ALL_RECORDS.findIndex(rec => rec.term === data.record.term);
-      if (idx >= 0) {
-        ALL_RECORDS[idx] = { ...data.record, _order: ALL_RECORDS[idx]._order };
-      } else {
-        ALL_RECORDS.push({ ...data.record, _order: ALL_RECORDS.length });
-      }
-      const contexts = Array.isArray(data.record.recent_contexts) ? data.record.recent_contexts.slice(0, 3) : [];
-      CONTEXT_CACHE.set(data.record.term, contexts);
-      renderTable(applyFilters(ALL_RECORDS));
+      upsertRecord(data.record);
+      rerender();
       if (CURRENT_CONTEXT_TERM === data.record.term) {
         showContextPanel(data.record.term);
       }
@@ -341,6 +379,85 @@ async function updateWord(term, action) {
   } catch (error) {
     console.error('[Progress] 更新词汇失败', error);
     setProgressStatus(`更新失败：${error.message}`, 'warn');
+  }
+}
+
+async function deleteWord(term) {
+  const target = typeof term === 'string' ? term.trim() : '';
+  if (!target) return;
+  const shouldDelete = typeof window !== 'undefined'
+    ? window.confirm(`确定要删除「${target}」吗？删除后该词汇的分数和语境记录将被移除。`)
+    : true;
+  if (!shouldDelete) return;
+
+  try {
+    setProgressStatus(`正在删除「${target}」…`, 'info');
+    const endpoint = `${API_BASE.replace(/\/$/, '')}/api/words/${encodeURIComponent(target)}`;
+    const data = await fetchJson(endpoint, { method: 'DELETE' });
+    if (data?.deleted) {
+      removeRecord(target);
+      rerender();
+      setProgressStatus(`已删除「${target}」`, 'ok');
+    } else {
+      await fetchAllScores();
+    }
+  } catch (error) {
+    console.error('[Progress] 删除词汇失败', error);
+    setProgressStatus(`删除失败：${error.message}`, 'warn');
+  }
+}
+
+async function createWord(rawTerm, rawMeaning) {
+  if (!newTermEl || !newMeaningEl) return;
+  const term = typeof rawTerm === 'string' ? rawTerm.trim() : '';
+  const meaning = typeof rawMeaning === 'string' ? rawMeaning.trim() : '';
+  if (!term) {
+    setAddWordStatus('请输入英文词汇', 'error');
+    newTermEl.focus();
+    return;
+  }
+  if (!meaning) {
+    setAddWordStatus('请输入对应的中文释义', 'error');
+    newMeaningEl.focus();
+    return;
+  }
+  if (IS_CREATING_WORD) {
+    setAddWordStatus('正在添加，请稍候…');
+    return;
+  }
+
+  try {
+    IS_CREATING_WORD = true;
+    setAddWordStatus(`正在添加「${term}」…`);
+    const endpoint = `${API_BASE.replace(/\/$/, '')}/api/words`;
+    const data = await fetchJson(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ term, meaning })
+    });
+    if (data?.record) {
+      upsertRecord(data.record);
+      rerender();
+      setAddWordStatus(`已添加「${term}」`, 'ok');
+      newTermEl.value = '';
+      newMeaningEl.value = '';
+      newTermEl.focus();
+    } else {
+      setAddWordStatus('添加成功，但未返回词汇记录', 'warn');
+      await fetchAllScores();
+    }
+  } catch (error) {
+    const message = error?.message || '添加失败';
+    if (message.includes('UNIQUE') || message.includes('已存在') || message.includes('409')) {
+      setAddWordStatus('该词汇已存在，无需重复添加', 'error');
+    } else {
+      setAddWordStatus(`添加失败：${message}`, 'error');
+    }
+    console.error('[Progress] 添加词汇失败', error);
+  } finally {
+    IS_CREATING_WORD = false;
   }
 }
 
@@ -357,6 +474,22 @@ if (meaningToggleEl) {
     SHOW_MEANING = meaningToggleEl.checked;
     updateMeaningVisibility();
     rerender();
+  });
+}
+
+if (addWordFormEl) {
+  addWordFormEl.addEventListener('submit', (event) => {
+    event.preventDefault();
+    createWord(newTermEl?.value ?? '', newMeaningEl?.value ?? '');
+  });
+  [newTermEl, newMeaningEl].forEach((input) => {
+    if (input) {
+      input.addEventListener('input', () => {
+        if (addWordStatusEl && addWordStatusEl.textContent) {
+          setAddWordStatus('');
+        }
+      });
+    }
   });
 }
 
@@ -428,7 +561,11 @@ progressBodyEl.addEventListener('click', (event) => {
   const term = markBtn.dataset.term;
   const action = markBtn.dataset.action;
   if (term && action) {
-    updateWord(term, action);
+    if (action === 'delete') {
+      deleteWord(term);
+    } else {
+      updateWord(term, action);
+    }
   }
 });
 

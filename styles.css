@@ -378,6 +378,16 @@ main {
   align-items: center;
 }
 
+.ai-btn.danger {
+  background: rgba(220,50,47,.12);
+  color: var(--warn);
+  border: 1px solid rgba(220,50,47,.35);
+}
+
+.ai-btn.danger:hover {
+  background: rgba(220,50,47,.18);
+}
+
 .history-detail-meta {
   font-size: 13px;
   color: var(--muted);
@@ -1248,6 +1258,57 @@ button:hover, .btn:hover {
   font-size: 13px;
 }
 
+.add-word-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.add-word-form input[type="text"] {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(38,139,210,.3);
+  background: var(--bg);
+  color: var(--text);
+  min-width: 160px;
+}
+
+.add-word-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(45deg, #34d399, #10b981);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.add-word-btn:hover,
+.add-word-btn:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16,185,129,.35);
+}
+
+.add-word-status {
+  min-width: 160px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.add-word-status.ok {
+  color: #059669;
+}
+
+.add-word-status.error {
+  color: #dc2626;
+}
+
+.add-word-status.warn {
+  color: #d97706;
+}
+
 .sort-btn {
   padding: 8px 12px;
   border-radius: 10px;
@@ -1464,6 +1525,11 @@ button:hover, .btn:hover {
 .mark-btn.reset {
   background: #f97316;
   color: #231815;
+}
+
+.mark-btn.delete {
+  background: #ef4444;
+  color: white;
 }
 
 .mark-btn:hover {

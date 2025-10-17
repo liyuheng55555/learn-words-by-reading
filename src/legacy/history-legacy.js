@@ -5,7 +5,8 @@ import {
   loadGradingHistory,
   getGradingHistoryRecord,
   markGradingHistorySubmitted,
-  markGradingHistoryScored
+  markGradingHistoryScored,
+  deleteGradingHistoryRecord
 } from '../utils/history-storage.js';
 
 const historyStatusEl = document.getElementById('history-status');
@@ -21,6 +22,7 @@ const resultsBodyEl = document.getElementById('history-results-body');
 const openSessionLink = document.getElementById('history-open-session');
 const copyLowBtn = document.getElementById('history-copy-low');
 const scoreRecordBtn = document.getElementById('history-score-record');
+const deleteRecordBtn = document.getElementById('history-delete-record');
 const resultsHeadEl = document.getElementById('history-results-head');
 const chartCanvas = document.getElementById('history-chart');
 const chartEmptyEl = document.getElementById('history-chart-empty');
@@ -44,6 +46,11 @@ let CURRENT_DETAIL_CONTEXT = null;
 if (scoreRecordBtn && !scoreRecordBtn.dataset.originalText) {
   scoreRecordBtn.dataset.originalText = scoreRecordBtn.textContent || '计分';
   scoreRecordBtn.classList.add('hidden');
+}
+
+if (deleteRecordBtn && !deleteRecordBtn.dataset.originalText) {
+  deleteRecordBtn.dataset.originalText = deleteRecordBtn.textContent || '删除';
+  deleteRecordBtn.classList.add('hidden');
 }
 
 function setHistoryStatus(message, kind = 'info') {
@@ -643,6 +650,25 @@ function renderSessionDetail(detail, options = {}) {
     }
   }
 
+  if (deleteRecordBtn) {
+    const canDelete = (source === 'local') || (source === 'remote' && !entryScored);
+    if (canDelete) {
+      deleteRecordBtn.classList.remove('hidden');
+      deleteRecordBtn.disabled = false;
+      deleteRecordBtn.dataset.entryId = LAST_SELECTED_ENTRY_ID || '';
+      if (recordId) {
+        deleteRecordBtn.dataset.recordId = recordId;
+      } else {
+        deleteRecordBtn.dataset.recordId = '';
+      }
+    } else {
+      deleteRecordBtn.classList.add('hidden');
+      deleteRecordBtn.disabled = true;
+      deleteRecordBtn.dataset.recordId = '';
+      deleteRecordBtn.dataset.entryId = '';
+    }
+  }
+
   if (entry) {
     entry.session = session;
     entry.scored = entryScored;
@@ -929,6 +955,10 @@ async function scoreCurrentHistoryRecord() {
     if (scoreRecordBtn) {
       scoreRecordBtn.classList.add('hidden');
     }
+    if (deleteRecordBtn) {
+      deleteRecordBtn.classList.add('hidden');
+      deleteRecordBtn.disabled = true;
+    }
 
     if (CURRENT_DETAIL_CONTEXT?.sessionData) {
       const detailForRender = {
@@ -1003,6 +1033,56 @@ if (copyLowBtn) {
 if (scoreRecordBtn) {
   scoreRecordBtn.addEventListener('click', async () => {
     await scoreCurrentHistoryRecord();
+  });
+}
+
+if (deleteRecordBtn) {
+  deleteRecordBtn.addEventListener('click', async () => {
+    const entryId = deleteRecordBtn.dataset.entryId || CURRENT_DETAIL_CONTEXT?.entryId || LAST_SELECTED_ENTRY_ID;
+    if (!entryId) {
+      setHistoryStatus('未找到需要删除的判题记录。', 'warn');
+      return;
+    }
+
+    const entry = HISTORY_INDEX.get(entryId);
+    if (!entry) {
+      setHistoryStatus('删除失败：记录不存在或已刷新。', 'warn');
+      return;
+    }
+
+    const confirmed = window.confirm(entry.source === 'remote'
+      ? '此记录尚未计分，删除后将无法计入总分，确定删除？'
+      : '确定要删除这条本地判题记录吗？操作不可恢复。');
+    if (!confirmed) return;
+
+    try {
+      if (entry.source === 'remote') {
+        const base = readScoreApiBase();
+        const endpoint = `${base.replace(/\/$/, '')}/api/sessions/${entry.sessionId}`;
+        await fetchJson(endpoint, { method: 'DELETE' });
+        setHistoryStatus(`已删除判题记录 #${entry.sessionId}`, 'ok');
+      } else {
+        const recordId = deleteRecordBtn.dataset.recordId || entry.recordId;
+        if (!recordId) {
+          setHistoryStatus('删除失败：缺少本地记录ID。', 'warn');
+          return;
+        }
+        const deleted = deleteGradingHistoryRecord(recordId);
+        if (!deleted) {
+          setHistoryStatus('删除失败：未找到对应的本地记录。', 'warn');
+          return;
+        }
+        setHistoryStatus('本地判题记录已删除。', 'ok');
+      }
+
+      CURRENT_DETAIL_CONTEXT = null;
+      LAST_SELECTED_ENTRY_ID = null;
+      refreshHistoryList({ autoSelect: true });
+      fetchSessions({ autoSelect: false });
+    } catch (error) {
+      console.error('[History] 删除判题记录失败:', error);
+      setHistoryStatus(`删除失败：${error.message}`, 'warn');
+    }
   });
 }
 
