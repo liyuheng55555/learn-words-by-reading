@@ -11,6 +11,7 @@ const MIN_SCORE = -4;
 const STRICT_THRESHOLD = 0.85;
 const PARTIAL_THRESHOLD = 0.6;
 const PUBLIC_ROOT = path.join(__dirname, '..');
+const VOCAB_PATH = path.join(DATA_DIR, 'vocabulary.csv');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -237,6 +238,31 @@ function tryServeStatic(req, res, pathname) {
 function escapeSqlString(value) {
   if (value === null || value === undefined) return '';
   return String(value).replace(/'/g, "''");
+}
+
+function parseCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      const next = line[i + 1];
+      if (inQuotes && next === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      cells.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
 }
 
 async function getScores() {
@@ -840,6 +866,65 @@ async function ensureGradingSessionColumns() {
   await runSqlite('UPDATE grading_sessions SET scored = 1 WHERE scored = 0 AND id IN (SELECT DISTINCT session_id FROM score_snapshots);');
 }
 
+async function initializeWordScoresFromCsv() {
+  try {
+    const countRaw = await runSqlite('SELECT COUNT(*) AS count FROM word_scores;', { json: true });
+    let existingCount = 0;
+    if (countRaw) {
+      try {
+        const parsed = JSON.parse(countRaw);
+        const record = Array.isArray(parsed) ? parsed[0] : null;
+        existingCount = record ? Number(record.count) || 0 : 0;
+      } catch (error) {
+        console.warn('Unable to parse word score count:', error.message);
+      }
+    }
+
+    if (existingCount > 0) {
+      return;
+    }
+
+    if (!fs.existsSync(VOCAB_PATH)) {
+      console.warn(`[Init] vocabulary.csv 不存在，跳过初始导入。路径：${VOCAB_PATH}`);
+      return;
+    }
+
+    const raw = fs.readFileSync(VOCAB_PATH, 'utf-8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    if (lines.length <= 1) {
+      console.warn('[Init] 词汇表文件为空，跳过初始导入。');
+      return;
+    }
+
+    const statements = ['BEGIN TRANSACTION;'];
+    let processed = 0;
+    let meaningCount = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const columns = parseCsvLine(lines[i]);
+      if (!columns || columns.length < 2) continue;
+      const term = columns[1] ? columns[1].trim() : '';
+      if (!term) continue;
+      const meaning = columns[3] ? columns[3].trim() : '';
+      const escapedTerm = escapeSqlString(term);
+
+      statements.push(`INSERT INTO word_scores(term, meaning) VALUES ('${escapedTerm}', ${meaning ? `'${escapeSqlString(meaning)}'` : 'NULL'}) ON CONFLICT(term) DO NOTHING;`);
+
+      if (meaning) {
+        statements.push(`UPDATE word_scores SET meaning = '${escapeSqlString(meaning)}' WHERE term = '${escapedTerm}' AND (meaning IS NULL OR TRIM(meaning) = '');`);
+        meaningCount++;
+      }
+      processed++;
+    }
+
+    statements.push('COMMIT;');
+    await runSqlite(statements.join('\n'));
+    console.log(`[Init] 已从词汇表导入 ${processed} 条记录，其中 ${meaningCount} 条包含中文释义。`);
+  } catch (error) {
+    console.error('[Init] 词汇表导入失败:', error.message);
+  }
+}
+
 async function handlePostScores(req, res) {
   try {
     const chunks = [];
@@ -1197,6 +1282,7 @@ async function requestListener(req, res) {
 async function start() {
   try {
     await ensureDatabase();
+    await initializeWordScoresFromCsv();
   } catch (error) {
     console.error('Failed to initialize database:', error.message);
     process.exit(1);
