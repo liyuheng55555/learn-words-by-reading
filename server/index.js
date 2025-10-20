@@ -744,7 +744,7 @@ async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThre
       ? `AND score < ${masteryThreshold}`
       : '';
     const sql = `SELECT term, score FROM word_scores
-      WHERE submissions > 0 ${thresholdQuery}
+      WHERE score IS NOT NULL ${thresholdQuery}
       ORDER BY score ASC, submissions ASC, rowid ASC
       LIMIT ${takePracticed};`;
     const raw = await runSqlite(sql, { json: true });
@@ -763,7 +763,7 @@ async function getSuggestedTerms(practicedCount = 0, totalCount = 0, masteryThre
         .join(',');
       const exclusionClause = excludeList ? `AND term NOT IN (${excludeList})` : '';
       const fallbackSql = `SELECT term, score FROM word_scores
-        WHERE submissions > 0 AND score >= 0 ${exclusionClause}
+        WHERE score IS NOT NULL AND score >= 0 ${exclusionClause}
         ORDER BY score ASC, submissions ASC, rowid ASC
         LIMIT ${fallbackRemaining};`;
       const fallbackRaw = await runSqlite(fallbackSql, { json: true });
