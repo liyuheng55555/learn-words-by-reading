@@ -1,69 +1,72 @@
-# 阅读学单词
+# Read to Learn Vocabulary
 
-## 项目简介
+## Project Overview
 
-一个专注于提高阅读识词能力的的网站，核心功能包含 AI 文章生成、AI 判题、做题历史以及词汇掌握度统计。
+A website focused on improving vocabulary recognition through reading. Core features include AI article generation, AI grading, practice history, and vocabulary mastery statistics.
 
-前端通过静态 HTML 页面配合 Vite 打包的 ES 模块运行，后端提供一个 Node.js + SQLite 的轻量服务用于保存练习成绩与词汇背景信息。
+The frontend runs as static HTML pages with ES modules bundled by Vite. The backend is a lightweight Node.js + SQLite service that stores practice results and vocabulary background information.
 
 ![reading.png](assets/reading.png)
 
-## 环境要求
-- Node.js 18 及以上版本，npm
+## Requirements
+
+- Node.js 18+ and npm
 - sqlite3
-- 前端功能高度依赖 AI ，**请自行准备可用的 API 与密钥**；模型推荐选择deepseek-v3.1-250821
+- The frontend relies heavily on AI. Please prepare a usable API endpoint and key yourself. Recommended model: `deepseek-v3.1-250821`.
 
-## 快速开始
+## Quick Start
 
-### 1. 安装依赖
+### 1. Install dependencies
 
 `npm install`
 
-### 2. 词库
+### 2. Vocabulary list
 
-首次启动时，需要 `data/vocabulary.csv` 存在，默认为雅思高频词库，可以自行替换为其它词库。
+On first run, `data/vocabulary.csv` must exist. By default it is an IELTS high‑frequency word list, which you can replace with any other list.
 
-### 3. 构建前端
+### 3. Build the frontend
 
 `npm run build:frontend`
 
-### 4. 启动后端
+### 4. Start the backend
 
 `npm start`
 
-### 5. 浏览器访问
+### 5. Open the app
 
 `http://localhost:4000`
 
-### 6. AI 配置
+### 6. AI configuration
 
-点击`AI工具箱`按钮，填入自己的 API 与密钥。
+Click the `AI Toolbox` button and enter your API and key.
 
 ![ai_config.png](assets/ai_config.png)
 
-### 7. 自动生成文章
+### 7. Auto‑generate articles
 
-配置所需的单词数量，点击自动取词按钮，然后点击文章生成按钮。
+Set the desired number of target words, click the Auto Select Words button, then click the Generate Article button.
 
-文章和题目生成需要约1分钟时间，生成后即可开始练习。
+Article and question generation takes about 1 minute. Once generated, you can start practicing.
 
 ![generate.png](assets/generate.png)
 
 ![empty_reading.png](assets/empty_reading.png)
 
-### 8. 自动判题
+### 8. Auto grading
 
-完成词汇填空后，点击页面右下角判题按钮，判题约需要1分钟时间。
+After completing the fill‑in‑the‑blank exercise, click the grading button at the bottom‑right of the page. Grading takes about 1 minute.
 
-判题结果以标准答案和答案相似度的形式给出，用户可以在判题历史页面回顾本次判题。
- 
-### 9. 分数提交
-如果认可本次判题结果，可以在判题历史中点击“计分”按钮，将本次分数纳入总分统计。
+The results include the reference answers and a similarity score. You can review this attempt on the grading history page.
+
+### 9. Submit score
+
+If you accept the grading results, click the "Score" button in history to include this attempt in the total statistics.
+
 ![history.png](assets/history.png)
 
-### 10. 词汇掌握情况
+### 10. Vocabulary mastery
 
-词汇掌握页面可以查看所有单词的分数。
+The vocabulary mastery page shows the scores for all words.
 
 ![words.png](assets/words.png)
 
